@@ -31,40 +31,39 @@ import csv
 import datetime
 import json
 import sys
+from html import escape as html_escape
 from pathlib import Path
 
-from atf_eval.aggregate import DEFAULT_WEIGHTS, atf_score
+from atf_eval.aggregate import resolve_weights
+from atf_eval.availability import resolve_availability
 from atf_eval.metrics.nodes import (
     node_coverage,
     node_order_similarity,
     node_precision,
     node_recall,
-    nts_conversation,
 )
 from atf_eval.metrics.outcome import (
     last_outcome,
-    os_conversation,
     outcome_attribute_accuracy,
     outcome_completion,
     outcome_identity_accuracy,
 )
-from atf_eval.metrics.routing import rs_conversation, routing_order_similarity
+from atf_eval.metrics.routing import routing_order_similarity, semantic_mean
 from atf_eval.metrics.state import (
     new_state_accuracy,
     old_state_accuracy,
     state_key_accuracy,
-    sts_conversation,
     transition_accuracy,
     transition_order_similarity,
 )
 from atf_eval.metrics.tools import (
-    tis_conversation,
     tool_coverage,
     tool_identity_accuracy,
     tool_input_similarity,
     tool_order_similarity,
     tool_precision,
 )
+from atf_eval.runner import score_trajectory
 from atf_eval.normalized import (
     InterruptionEvent,
     NormalizedNode,
@@ -152,23 +151,58 @@ def load_golden_turns(path: Path) -> list[NormalizedTurn]:
             )
             for n in t.get("nodes", [])
         ]
-        flat_tool_calls = [tc for n in nodes for tc in n.tool_calls]
         turns.append(
             NormalizedTurn(
                 conversation_id=doc["trace_id"],
                 turn_id=t["turn_id"],
                 nodes=nodes,
-                tool_calls=flat_tool_calls,
+                tool_calls=_canonical_tool_calls(t.get("unassociated_tool_calls", [])),
                 routing=_routing(t),
                 response=t.get("output", {}).get("agent"),
                 customer_input=t.get("input", {}).get("customer"),
                 timing=_timing(t),
             )
         )
-    raw_outcome = doc.get("outcome")
-    if raw_outcome is not None and turns:
-        turns[-1].outcome = Outcome(id=raw_outcome["id"], attributes=raw_outcome.get("attributes", {}))
+    _attach_trace_outcome(doc, turns)
     return turns
+
+
+def _attach_trace_outcome(doc: dict, turns: list[NormalizedTurn]) -> None:
+    """A trace-level `outcome` belongs to the conversation's last turn (same
+    convention for golden and observed)."""
+    if not turns:
+        return
+    raw_outcome = doc.get("outcome")
+    if raw_outcome is not None:
+        turns[-1].outcome = Outcome(
+            id=raw_outcome.get("id"),
+            attributes=raw_outcome.get("attributes", {}),
+            required_conditions=raw_outcome.get("required_conditions", []),
+        )
+
+
+def declared_availability(doc: dict) -> dict[str, str]:
+    """The canonical trace's declared `availability` (a required field of the
+    agent-eval schema) wins; for a raw fixture without one, the fixture
+    "adapter" declares a dimension available
+    iff the raw trace carries that field at all. A field that is present but
+    empty means "instrumented, nothing happened" (a scored miss); a field
+    that is absent means "not recorded" (N/A)."""
+    if doc.get("availability"):
+        return dict(doc["availability"])
+    raw_turns = doc.get("turns") or ([doc["turn"]] if "turn" in doc else [])
+    raw_nodes = [n for t in raw_turns for n in t.get("nodes", [])]
+
+    def has(field: str) -> bool:
+        return any(field in t for t in raw_turns) or any(field in n for n in raw_nodes)
+
+    return {
+        "nodes": "available" if has("nodes") else "unavailable",
+        "state": "available" if has("state_changes") else "unavailable",
+        "tools": "available" if has("tool_calls") else "unavailable",
+        "routing": "available",
+        "outcome": "available" if "outcome" in doc else "unavailable",
+    }
 
 
 def _normalize_raw_turn(raw_turn: dict) -> NormalizedTurn:
@@ -181,12 +215,15 @@ def _normalize_raw_turn(raw_turn: dict) -> NormalizedTurn:
         )
         for n in raw_turn.get("nodes", [])
     ]
-    flat_tool_calls = [tc for n in nodes for tc in n.tool_calls]
+    # Raw fixtures repeat every node's tool calls / state changes in a
+    # turn-level list; the metrics de-duplicate those against the node-level
+    # events (atf_eval.metrics.evidence), so either copy may be passed.
     return NormalizedTurn(
         conversation_id="_",
         turn_id=raw_turn["turn_id"],
         nodes=nodes,
-        tool_calls=flat_tool_calls,
+        tool_calls=_raw_fixture_tool_calls(raw_turn.get("tool_calls", [])),
+        state_changes=_state_changes(raw_turn.get("state_changes", [])),
         routing=_routing(raw_turn),
         response=raw_turn.get("conversation", {}).get("agent"),
         customer_input=raw_turn.get("conversation", {}).get("customer"),
@@ -200,13 +237,7 @@ def load_fixture_turns(path: Path) -> list[NormalizedTurn]:
         turns = [_normalize_raw_turn(t) for t in doc["turns"]]
     else:
         turns = [_normalize_raw_turn(doc["turn"])]
-    # Some observed fixtures (e.g. a disconnect/drift scenario) carry a
-    # trace-level `outcome`, same convention as the golden files -- attach it
-    # to the last turn so OS can actually see it instead of reading N/A/0.0
-    # for a fixture gap that isn't really there.
-    raw_outcome = doc.get("outcome")
-    if raw_outcome is not None and turns:
-        turns[-1].outcome = Outcome(id=raw_outcome["id"], attributes=raw_outcome.get("attributes", {}))
+    _attach_trace_outcome(doc, turns)
     return turns
 
 
@@ -215,28 +246,28 @@ def load_fixture_turns(path: Path) -> list[NormalizedTurn]:
 # ---------------------------------------------------------------------------
 
 
-def _routing_semantic_scores(
+def _routing_verdicts(
     expected: list[NormalizedTurn],
     observed: list[NormalizedTurn],
     judge_client,
     judge_model: str,
     judge_effort: str | None,
-) -> list[float | None]:
-    """One RS routing-judge verdict per observed turn (METRICS.md §5), aligned
-    to the golden turn with the same turn_id. None (N/A) for any turn with no
-    judge client, no expected routing, or a judge-call failure -- never 0.
-    Turn calls run concurrently; a cache hit resolves instantly."""
+) -> list:
+    """One RS routing-judge verdict per observed turn (METRICS.md §5), aligned to
+    the golden turn with the same turn_id; None for any turn with no judge
+    client, no expected routing, or a judge-call failure -- never 0. Turn
+    calls run concurrently; a cache hit resolves instantly."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from atf_eval.metrics.routing import semantic_routing_score
+    from atf_eval.metrics.routing import routing_verdict
 
     ref_by_id = {t.turn_id: t for t in expected}
 
-    def _one(obs: NormalizedTurn) -> float | None:
+    def _one(obs: NormalizedTurn):
         ref = ref_by_id.get(obs.turn_id)
         if ref is None:
             return None
-        return semantic_routing_score(
+        return routing_verdict(
             obs.customer_input or ref.customer_input or "",
             ref, obs, judge_client, judge_model, judge_effort,
         )
@@ -253,73 +284,61 @@ def score_components(
     judge_client=None,
     judge_model: str = "claude-opus-5",
     judge_effort: str | None = None,
+    declared: dict[str, str] | None = None,
+    weights: dict | None = None,
+    subweights: dict | None = None,
 ) -> dict:
+    """Every group score and subcomponent for one run, via atf_eval's own
+    scoring (runner.score_trajectory) -- no formula is re-derived here.
+    Subcomponents of a dimension declared unavailable are reported N/A,
+    matching the group score."""
+    availability = resolve_availability(declared, judge_configured=judge_client is not None)
+    verdicts = _routing_verdicts(expected, observed, judge_client, judge_model, judge_effort)
+    scored = score_trajectory(
+        expected, observed, verdicts=verdicts, availability=availability, weights=weights, subweights=subweights
+    )
+
+    def gate(dimension: str, value):
+        return value if availability[dimension] == "available" else None
+
     exp_node_ids = [n.node_id for t in expected for n in t.nodes]
     obs_node_ids = [n.node_id for t in observed for n in t.nodes]
-
-    combined_expected = NormalizedTurn(
-        conversation_id="_", turn_id=0,
-        nodes=[n for t in expected for n in t.nodes],
-        state_changes=[c for t in expected for c in t.state_changes],
-    )
-    combined_observed = NormalizedTurn(
-        conversation_id="_", turn_id=0,
-        nodes=[n for t in observed for n in t.nodes],
-        state_changes=[c for t in observed for c in t.state_changes],
-    )
-
-    exp_calls = [tc for t in expected for tc in t.tool_calls]
-    obs_calls = [tc for t in observed for tc in t.tool_calls]
-    exp_tool_names = [t.tool_id for t in exp_calls]
-    obs_tool_names = [t.tool_id for t in obs_calls]
-
     exp_outcome = last_outcome(expected)
     obs_outcome = last_outcome(observed)
 
-    per_turn_semantic = _routing_semantic_scores(
-        expected, observed, judge_client, judge_model, judge_effort
-    )
-    applicable_semantic = [s for s in per_turn_semantic if s is not None]
-    rs_semantic = sum(applicable_semantic) / len(applicable_semantic) if applicable_semantic else None
-
-    group_scores = {
-        "nts": nts_conversation(expected, observed),
-        "sts": sts_conversation(expected, observed),
-        "tis": tis_conversation(expected, observed),
-        "rs": rs_conversation(expected, observed, per_turn_semantic_scores=per_turn_semantic),
-        "os": os_conversation(expected, observed),
-    }
-    atf, coverage = atf_score(group_scores, DEFAULT_WEIGHTS)
-
     return {
-        "nts_coverage": node_coverage(exp_node_ids, obs_node_ids),
-        "nts_precision": node_precision(exp_node_ids, obs_node_ids),
-        "nts_recall_diag": node_recall(exp_node_ids, obs_node_ids),
-        "nts_order": node_order_similarity(exp_node_ids, obs_node_ids),
-        "nts_overall": group_scores["nts"],
-        "sts_transition_accuracy": transition_accuracy(combined_expected, combined_observed),
-        "sts_order": transition_order_similarity(combined_expected, combined_observed),
-        "sts_key_accuracy_diag": state_key_accuracy(combined_expected, combined_observed),
-        "sts_old_value_accuracy_diag": old_state_accuracy(combined_expected, combined_observed),
-        "sts_new_value_accuracy_diag": new_state_accuracy(combined_expected, combined_observed),
-        "sts_overall": group_scores["sts"],
-        "tis_coverage": tool_coverage(exp_tool_names, obs_tool_names),
-        "tis_precision": tool_precision(exp_tool_names, obs_tool_names),
-        "tis_identity": tool_identity_accuracy(exp_calls, obs_calls),
-        "tis_input_similarity": tool_input_similarity(exp_calls, obs_calls),
-        "tis_order": tool_order_similarity(exp_tool_names, obs_tool_names),
-        "tis_overall": group_scores["tis"],
-        "rs_semantic": rs_semantic,  # mean LLM routing-judge verdict across applicable turns
+        "nts_coverage": gate("nodes", node_coverage(exp_node_ids, obs_node_ids)),
+        "nts_precision": gate("nodes", node_precision(exp_node_ids, obs_node_ids)),
+        "nts_recall_diag": gate("nodes", node_recall(exp_node_ids, obs_node_ids)),
+        "nts_order": gate("nodes", node_order_similarity(exp_node_ids, obs_node_ids)),
+        "nts_overall": scored.nts,
+        "sts_transition_accuracy": gate("state", transition_accuracy(expected, observed)),
+        "sts_order": gate("state", transition_order_similarity(expected, observed)),
+        "sts_key_accuracy_diag": gate("state", state_key_accuracy(expected, observed)),
+        "sts_old_value_accuracy_diag": gate("state", old_state_accuracy(expected, observed)),
+        "sts_new_value_accuracy_diag": gate("state", new_state_accuracy(expected, observed)),
+        "sts_overall": scored.sts,
+        "tis_coverage": gate("tools", tool_coverage(expected, observed)),
+        "tis_precision": gate("tools", tool_precision(expected, observed)),
+        "tis_identity": gate("tools", tool_identity_accuracy(expected, observed)),
+        "tis_input_similarity": gate("tools", tool_input_similarity(expected, observed)),
+        "tis_order": gate("tools", tool_order_similarity(expected, observed)),
+        "tis_overall": scored.tis,
+        # mean judge verdict over applicable turns; without any verdict RS
+        # is N/A and order is shown as a diagnostic (METRICS.md §5)
+        "rs_semantic": gate("routing", semantic_mean([v.score if v else None for v in verdicts])),
         "rs_order": routing_order_similarity(expected, observed),
-        "rs_overall": group_scores["rs"],
-        "os_identity": outcome_identity_accuracy(exp_outcome, obs_outcome),
-        "os_attribute": outcome_attribute_accuracy(exp_outcome, obs_outcome),
-        "os_completion": outcome_completion(exp_outcome, obs_outcome),
-        "os_overall": group_scores["os"],
-        "atf": atf,
-        "metric_coverage": coverage,
+        "rs_overall": scored.rs,
+        "os_identity": gate("outcome", outcome_identity_accuracy(exp_outcome, obs_outcome)),
+        "os_attribute": gate("outcome", outcome_attribute_accuracy(exp_outcome, obs_outcome)),
+        "os_completion": gate("outcome", outcome_completion(exp_outcome, obs_outcome)),
+        "os_overall": scored.os,
+        "atf": scored.atf,
+        "metric_coverage": scored.metric_coverage,
         "_exp_outcome": exp_outcome,
         "_obs_outcome": obs_outcome,
+        "_availability": availability,
+        "_diagnostics": {k: r.diagnostics for k, r in scored.metric_results.items()},
     }
 
 
@@ -347,7 +366,12 @@ def discover_goldens(golden_dir: Path) -> list[dict]:
     for path in sorted(golden_dir.glob("*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         key = doc.get("metadata", {}).get("scenario_id") or doc["trace_id"]
-        goldens.append({"key": key, "path": path, "turns": load_golden_turns(path)})
+        goldens.append({
+            "key": key,
+            "path": path,
+            "turns": load_golden_turns(path),
+            "availability": declared_availability(doc),
+        })
     return goldens
 
 
@@ -391,6 +415,7 @@ def discover_runs(goldens: list[dict], scenarios_dir: Path) -> list[dict]:
                 "turns_compared": turns_compared_label(g["turns"], g["turns"]),
                 "doc_meta": {},
                 "golden_key": g["key"],
+                "availability": g["availability"],
             }
         )
         for path, doc_meta, matched in fixture_docs:
@@ -410,6 +435,7 @@ def discover_runs(goldens: list[dict], scenarios_dir: Path) -> list[dict]:
                     "turns_compared": turns_compared_label(expected, golden_turns),
                     "doc_meta": doc_meta,
                     "golden_key": g["key"],
+                    "availability": declared_availability(doc_meta),
                 }
             )
     return runs
@@ -586,6 +612,7 @@ def render_group_meter(key: str, label: str, weight: str, components: list, m: d
     b = band(score)
     open_attr = " open" if open_default else ""
     rows = "".join(render_component_row(c_label, m[c_key], diag) for c_label, c_key, diag in components)
+    evidence = render_evidence(key, m)
     return f"""
           <details class="group-meter"{open_attr}>
             <summary>
@@ -594,8 +621,85 @@ def render_group_meter(key: str, label: str, weight: str, components: list, m: d
               <span class="g-score" style="color:var(--{b})">{fmt(score)}</span>
             </summary>
             <div class="component-list">{rows}
-            </div>
+            </div>{evidence}
           </details>"""
+
+
+def _esc(value) -> str:
+    return html_escape(value if isinstance(value, str) else json.dumps(value, default=str))
+
+
+def _evidence_items(key: str, m: dict) -> list[str]:
+    """The evidence responsible for a component's score (METRICS.md §8)."""
+    availability = m.get("_availability", {})
+    dimension = {"nts": "nodes", "sts": "state", "tis": "tools", "rs": "routing", "os": "outcome"}[key]
+    status = availability.get(dimension, "available")
+    if key == "os" and m.get("_exp_outcome") is None:
+        return ["N/A: the compared golden turns define no outcome."]
+    if status == "unavailable":
+        return [f"N/A: the trace declares <code>{dimension}</code> evidence unavailable, so this is not scored as a failure."]
+    d = m.get("_diagnostics", {}).get(key, {})
+    items: list[str] = []
+    if key == "nts":
+        for label, field in (("Missing", "missing"), ("Extra", "extra"), ("Reordered", "reordered")):
+            if d.get(field):
+                items.append(f"{label} nodes: " + ", ".join(f"<code>{_esc(n)}</code>" for n in d[field]))
+    elif key == "sts":
+        if d.get("missing"):
+            items.append("Missing transitions: " + ", ".join(
+                f"<code>{_esc(c['key'])}: {_esc(c['old'])} &rarr; {_esc(c['new'])}</code>" for c in d["missing"]))
+        for c in d.get("mismatched", []):
+            items.append(
+                f"Wrong transition <code>{_esc(c['key'])}</code>: expected "
+                f"<code>{_esc(c['expected_old'])} &rarr; {_esc(c['expected_new'])}</code>, observed "
+                f"<code>{_esc(c['observed_old'])} &rarr; {_esc(c['observed_new'])}</code>")
+        if d.get("order_deviations"):
+            items.append("Transitions out of expected order: " + ", ".join(
+                f"<code>{_esc(c['key'])}: {_esc(c['old'])} &rarr; {_esc(c['new'])}</code>" for c in d["order_deviations"]))
+        if d.get("extra"):
+            items.append("Unexpected transitions: " + ", ".join(
+                f"<code>{_esc(c['key'])}: {_esc(c['old'])} &rarr; {_esc(c['new'])}</code>" for c in d["extra"]))
+    elif key == "tis":
+        if d.get("missing"):
+            items.append("Missing tools: " + ", ".join(f"<code>{_esc(t)}</code>" for t in d["missing"]))
+        if d.get("extra"):
+            items.append("Extra tools: " + ", ".join(f"<code>{_esc(t)}</code>" for t in d["extra"]))
+        if d.get("order_deviations"):
+            items.append("Tools out of expected order: " + ", ".join(f"<code>{_esc(t)}</code>" for t in d["order_deviations"]))
+        for sub in d.get("substituted", []):
+            items.append(f"Wrong tool: expected <code>{_esc(sub['expected'])}</code>, called <code>{_esc(sub['observed'])}</code>")
+        for a in d.get("unexpected_arguments", []):
+            items.append(
+                f"Arguments passed to <code>{_esc(a['tool'])}</code> that golden does not specify "
+                f"(input similarity compares only the expected arguments): <code>{_esc(a['arguments'])}</code>")
+        for a in d.get("argument_mismatches", []):
+            items.append(
+                f"Arguments of <code>{_esc(a['tool'])}</code> ({a['similarity']:.2f}): expected "
+                f"<code>{_esc(a['expected'])}</code>, observed <code>{_esc(a['observed'])}</code>")
+    elif key == "rs":
+        if status == "not_applicable":
+            items.append("N/A: no routing judge configured. The judge score is a required part of RS, "
+                         f"so routing order ({fmt(m.get('rs_order'))}) is shown as a diagnostic only.")
+        else:
+            items.append(f"Judged {d.get('judged_turns', 0)} of {d.get('applicable_turns', 0)} applicable turns.")
+            for v in d.get("verdicts", []):
+                items.append(f"Turn {v['turn_id']}: <strong>{_esc(v['verdict'])}</strong> &mdash; {_esc(v['rationale'])}")
+    elif key == "os":
+        for a in d.get("incorrect_attributes", []):
+            items.append(f"Attribute <code>{_esc(a['key'])}</code>: expected <code>{_esc(a['expected'])}</code>, "
+                         f"observed <code>{_esc(a['observed'])}</code>")
+        for c in d.get("unmet_conditions", []):
+            items.append(f"Unmet completion condition: <code>{_esc(c)}</code>")
+    return items
+
+
+def render_evidence(key: str, m: dict) -> str:
+    items = _evidence_items(key, m)
+    if not items:
+        return ""
+    lis = "".join(f"<li>{i}</li>" for i in items)
+    return f'''
+            <div class="evidence"><span class="evidence-label">Evidence</span><ul>{lis}</ul></div>'''
 
 
 def primary_metric_for(deviation_type: str) -> str | None:
@@ -685,42 +789,56 @@ def annotate_notes(runs: list[dict]) -> None:
     than silently showing a misleading number."""
     for run in runs:
         m = run["metrics"]
-        exp_outcome, obs_outcome = m["_exp_outcome"], m["_obs_outcome"]
-        m["_os_flag"] = (
-            exp_outcome is not None and obs_outcome is None and m["os_overall"] is not None
-        )
-        if m["_os_flag"]:
+        exp_outcome = m["_exp_outcome"]
+        m["_os_flag"] = False  # an unrecorded outcome is N/A now, never a flagged 0
+        if exp_outcome is not None and m["_availability"]["outcome"] == "unavailable":
             run["callout"] = (
                 f"the observed fixture <code>{run['scenario']}.json</code> never records an "
-                f"<code>outcome</code> field at all, so it can't match golden's "
-                f"<code>{exp_outcome.id}</code> &mdash; that reads as OS&nbsp;=&nbsp;0.000 and pulls "
-                f"this run's ATF down to {fmt(m['atf'])}. That's a gap in how the raw fixture is "
-                f"shaped, not evidence the agent failed to reach the outcome."
+                f"<code>outcome</code> field, so outcome evidence is declared unavailable and OS is "
+                f"N/A rather than a failure against golden's <code>{exp_outcome.id}</code> "
+                f"(METRICS.md &sect;6, &sect;11). ATF is renormalized over the other components; see this run's "
+                f"metric coverage."
             )
-            m["_note"] = (
-                "<strong>&#9888; Read this OS score as a fixture gap, not a real miss.</strong> "
-                "This observed fixture never records an <code>outcome</code> field, so it can't "
-                f"match golden's <code>{exp_outcome.id}</code>. See \"Notes for the reader\" below."
-            )
-        elif run["deviation_type"] == "missing_tool_call" and m["tis_overall"] == 0.0 and (
-            m["nts_overall"] or 0 >= 0.999
+        if run["deviation_type"] == "missing_tool_call" and m["tis_overall"] == 0.0 and (
+            (m["nts_overall"] or 0) >= 0.999
         ) and (m["sts_overall"] or 0) >= 0.999:
             m["_note"] = (
                 "<strong>This one is a clean, isolated TIS failure.</strong> NTS and STS both stay "
-                "perfect &mdash; only the tool call itself is missing, matching METRICS.md's "
-                "\"Missing tool call\" deviation definition in &sect;11."
+                "perfect &mdash; only the tool call itself is missing."
             )
         elif run["doc_meta"].get("deviation", {}).get("expected_input") == {} and m["tis_overall"] == 1.0:
             m["_note"] = (
                 "<strong>Named a tool-input deviation, scores perfect &mdash; and that's correct "
-                "behavior.</strong> Golden's own call here expects no arguments (<code>{}</code>). "
-                "Per METRICS.md &sect;4, Tool Input Similarity is \"average similarity of matched "
-                "tool inputs\" &mdash; when nothing was required, there is nothing to get wrong, so "
-                "this fixture's argument mismatch never surfaces in TIS."
+                "behavior.</strong> Golden's own call here expects no arguments (<code>{}</code>), and "
+                "input similarity compares the expected arguments (METRICS.md &sect;4), so with none expected there is "
+                "nothing to get wrong. The fixture would need non-empty expected arguments to exercise TIS input."
             )
 
 
-def render_dashboard(runs: list[dict], golden_summary: str, scenarios_dir: Path, run_date: str) -> str:
+def render_settings_rows(settings: dict) -> str:
+    """The settings recorded with the results for auditability (METRICS.md §8, §23)."""
+    judge = settings["routing_judge"]
+    if judge.get("configured"):
+        judge_text = (
+            f"{html_escape(str(judge['model']))}, effort {html_escape(str(judge['effort']))}, "
+            f"max_tokens {judge['max_tokens']}, temperature {html_escape(judge['temperature'])}, "
+            f"prompt <code>{html_escape(judge['system_prompt_id'])}</code>"
+        )
+    else:
+        judge_text = "not configured (RS is N/A)"
+    return (
+        f"      <div><dt>Routing judge</dt><dd>{judge_text}</dd></div>\n"
+        f"      <div><dt>Matching rules</dt><dd>arguments: {html_escape(settings['argument_matching'])}; "
+        f"outcome identity: {html_escape(settings['outcome_identity_evaluator'])}</dd></div>\n"
+        f"      <div><dt>Weights</dt><dd>ATF "
+        + " / ".join(f"{k.upper()} {v:g}" for k, v in settings["weights"].items())
+        + "</dd></div>\n"
+    )
+
+
+def render_dashboard(
+    runs: list[dict], golden_summary: str, scenarios_dir: Path, run_date: str, settings: dict | None = None
+) -> str:
     glance_rows = "".join(
         render_glance_row(run, baseline=(run["deviation_type"] == "none")) for run in runs
     )
@@ -744,25 +862,27 @@ def render_dashboard(runs: list[dict], golden_summary: str, scenarios_dir: Path,
 
     panels = "".join(render_panel(i, run) for i, run in enumerate(runs, start=1))
 
-    any_os_flag = any(r["metrics"].get("_os_flag") for r in runs)
     any_routing = any(r["metrics"]["rs_overall"] is not None for r in runs)
-    notes_parts = []
-    if any_os_flag:
-        for r in runs:
-            if r["metrics"].get("_os_flag"):
-                notes_parts.append(f"<p>For <code>{r['scenario']}</code>, {r['callout']}</p>")
+    notes_parts = [
+        f"<p>For <code>{r['scenario']}</code>, {r['callout']}</p>" for r in runs if r.get("callout")
+    ]
     if not any_routing:
-        notes_parts.append(
-            "<p><strong>Routing Similarity (RS)</strong> is N/A across every run: none of these "
-            "fixtures record a <code>routing</code> block, so per METRICS.md &sect;5 there is nothing "
-            "for the LLM routing judge to evaluate.</p>"
+        judge_off = all(r["metrics"]["_availability"]["routing"] == "not_applicable" for r in runs)
+        reason = (
+            "no routing judge was configured for this run. The judge score is a required part of RS "
+            "(METRICS.md &sect;5), so routing order alone is not reported as RS &mdash; it is shown in each "
+            "panel's RS evidence instead."
+            if judge_off
+            else "no judged routing decisions were available."
         )
+        notes_parts.append(f"<p><strong>Routing Similarity (RS)</strong> is N/A across every run: {reason}</p>")
     notes_html = "".join(notes_parts) or "<p>No scoring caveats detected for this run set.</p>"
 
     html = PAGE_SHELL
     html = html.replace("{{GOLDEN_PATH}}", golden_summary)
     html = html.replace("{{SCENARIOS_PATH}}", str(scenarios_dir))
     html = html.replace("{{RUN_DATE}}", run_date)
+    html = html.replace("{{SETTINGS_ROWS}}", render_settings_rows(settings) if settings else "")
     html = html.replace("{{TAB_INPUTS}}", tab_inputs)
     html = html.replace("{{TAB_LABELS}}", tab_labels)
     html = html.replace("{{TAB_ACTIVE_CSS}}", tab_css)
@@ -983,6 +1103,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="Skip RS's LLM routing judge -- RS reports N/A instead.")
     parser.add_argument("--no-llm-evals", action="store_true",
                         help="Skip the Group 1-5 LLM/multimodal metrics (and the LLM section of each panel).")
+    parser.add_argument("--weights-file", default=None,
+                        help='JSON override of the ATF component weights {"nts", "sts", "tis", "rs", "os"} '
+                             "(must sum to 1; default: METRICS.md §7).")
 
 
 def run(args: argparse.Namespace) -> None:
@@ -1003,6 +1126,11 @@ def run(args: argparse.Namespace) -> None:
 
     rs_client = None if args.no_routing_judge else judge_client
 
+    weights_config = None
+    if args.weights_file:
+        weights_config = json.loads(Path(args.weights_file).read_text(encoding="utf-8"))
+    weights, subweights = resolve_weights(weights_config)
+
     if not golden_dir.exists():
         raise SystemExit(
             f"Golden directory not found: {golden_dir}\n"
@@ -1019,7 +1147,8 @@ def run(args: argparse.Namespace) -> None:
     runs = discover_runs(goldens, scenarios_dir)
     for run_ in runs:
         run_["metrics"] = score_components(
-            run_["expected"], run_["observed"], rs_client, args.judge_model, args.effort
+            run_["expected"], run_["observed"], rs_client, args.judge_model, args.effort,
+            declared=run_["availability"], weights=weights, subweights=subweights,
         )
     annotate_notes(runs)
 
@@ -1037,7 +1166,14 @@ def run(args: argparse.Namespace) -> None:
     # Single dashboard: render_dashboard()/render_panel() embed each run's LLM
     # Groups 1-5 results (if any) directly into that run's own panel, so
     # there is exactly one HTML file to publish, not a deterministic/LLM pair.
-    dashboard_html = render_dashboard(runs, golden_summary, scenarios_dir, run_date)
+    from atf_eval.settings import evaluation_settings
+
+    settings = evaluation_settings(
+        args.judge_model if rs_client else None, args.effort, weights=weights, subweights=subweights
+    )
+    settings_path = output_dir / f"atf_settings_{timestamp}.json"
+    settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    dashboard_html = render_dashboard(runs, golden_summary, scenarios_dir, run_date, settings)
     dashboard_path = output_dir / f"atf_dashboard_{timestamp}.html"
     dashboard_path.write_text(dashboard_html, encoding="utf-8")
 
@@ -1045,6 +1181,7 @@ def run(args: argparse.Namespace) -> None:
     print(f"  {group_csv}")
     print(f"  {component_csv}")
     print(f"  {dashboard_path}")
+    print(f"  {settings_path}")
 
     llm_csv = write_llm_csv(runs, output_dir, timestamp)
     if llm_csv is not None:

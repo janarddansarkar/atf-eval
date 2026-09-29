@@ -1,184 +1,211 @@
 """State Transition Similarity (STS) — METRICS.md §3.
 
-State is evaluated from node-level `state_changes[]` (Frozen Rule #6): nodes
-are aligned first (same LCS-based alignment used by NTS), then state changes
-within each aligned node pair are compared and paired by key, in occurrence
-order. Falls back to whole-turn key pairing only when neither side exposes
-any nodes at all (an agent with no observable node structure).
+A state transition is (key, old, new). State is evaluated from node-level
+`state_changes[]` (Frozen Rule 6). Alignment uses the corresponding node
+alignment -- the exact, position-aware sequential (LCS) node alignment NTS
+uses -- and state changes are compared within each aligned node pair, paired
+by key in occurrence order. Only when neither side exposes any nodes are
+transitions paired by key across the trajectory. Unchanged state variables
+are not represented as transitions.
 
-Key/old/new-value accuracy are retained as diagnostics explaining transition
-mismatches -- they are no longer part of the main weighted STS formula.
+    Transition Accuracy = Matched Complete Transitions
+                          / max(Expected Transitions, Observed Transitions)
+    Transition Order    = LCS(Expected Transition Sequence, Observed Transition Sequence)
+                          / max(Expected Transition Count, Observed Transition Count)
+    STS = 0.70 × Transition Accuracy + 0.30 × Transition Order
+
+A complete match agrees on key, old value and new value; the transition
+sequence is the sequence of full (key, old, new) transitions. Key/old/new-
+value accuracy are diagnostics. If state information is unavailable, STS is
+N/A (as it is when neither side has any transition).
 """
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 from atf_eval import lcs
-from atf_eval.aggregate import weighted_composite
+from atf_eval.aggregate import subweights_for, weighted_composite
+from atf_eval.matching import values_match
 from atf_eval.metric_result import MetricResult, make_result
-from atf_eval.normalized import NormalizedNode, NormalizedTurn, StateChange
+from atf_eval.metrics.evidence import (
+    aligned_node_pairs,
+    exposes_nodes,
+    order_deviations,
+    node_transitions,
+    trajectory_transitions,
+    transition_key,
+)
+from atf_eval.normalized import NormalizedTurn, StateChange
 
-_STS_WEIGHTS = {"transition_accuracy": 0.70, "order": 0.30}
+
+@dataclass
+class TransitionAlignment:
+    pairs: list[tuple[StateChange, StateChange | None]] = field(default_factory=list)
+    extra: list[StateChange] = field(default_factory=list)
+    expected_count: int = 0
+    observed_count: int = 0
 
 
 def _pair_by_key(
     expected: list[StateChange], observed: list[StateChange]
-) -> list[tuple[StateChange, StateChange | None]]:
+) -> tuple[list[tuple[StateChange, StateChange | None]], list[StateChange]]:
     observed_by_key: dict[str, list[StateChange]] = defaultdict(list)
     for oc in observed:
         observed_by_key[oc.key].append(oc)
-    next_index: dict[str, int] = defaultdict(int)
+    used: dict[str, int] = defaultdict(int)
 
     pairs: list[tuple[StateChange, StateChange | None]] = []
     for ec in expected:
         candidates = observed_by_key[ec.key]
-        idx = next_index[ec.key]
+        idx = used[ec.key]
         if idx < len(candidates):
             pairs.append((ec, candidates[idx]))
-            next_index[ec.key] += 1
+            used[ec.key] += 1
         else:
             pairs.append((ec, None))
-    return pairs
+    extra = [oc for key, ocs in observed_by_key.items() for oc in ocs[used[key]:]]
+    return pairs, extra
 
 
-def _aligned_node_pairs(
-    expected: NormalizedTurn, observed: NormalizedTurn
-) -> list[tuple[NormalizedNode | None, NormalizedNode | None]]:
-    expected_ids = [n.node_id for n in expected.nodes]
-    observed_ids = [n.node_id for n in observed.nodes]
-    index_pairs = lcs.align(expected_ids, observed_ids)
-    return [
-        (
-            expected.nodes[i] if i is not None else None,
-            observed.nodes[j] if j is not None else None,
+def align_transitions(
+    expected_turns: list[NormalizedTurn], observed_turns: list[NormalizedTurn]
+) -> TransitionAlignment:
+    node_level = exposes_nodes(expected_turns, observed_turns)
+    expected = trajectory_transitions(expected_turns, node_level)
+    observed = trajectory_transitions(observed_turns, node_level)
+    result = TransitionAlignment(expected_count=len(expected), observed_count=len(observed))
+
+    if not node_level:
+        result.pairs, result.extra = _pair_by_key(expected, observed)
+        return result
+
+    exp_nodes = [n for t in expected_turns for n in t.nodes]
+    obs_nodes = [n for t in observed_turns for n in t.nodes]
+
+    for e_node, o_node in aligned_node_pairs(exp_nodes, obs_nodes):
+        pairs, extra = _pair_by_key(
+            node_transitions(e_node) if e_node is not None else [],
+            node_transitions(o_node) if o_node is not None else [],
         )
-        for i, j in index_pairs
-    ]
+        result.pairs += pairs
+        result.extra += extra
+    return result
 
 
-def _transition_pairs(
-    expected: NormalizedTurn, observed: NormalizedTurn
-) -> list[tuple[StateChange, StateChange | None]]:
-    if not expected.nodes and not observed.nodes:
-        return _pair_by_key(expected.state_changes, observed.state_changes)
-
-    pairs: list[tuple[StateChange, StateChange | None]] = []
-    for e_node, o_node in _aligned_node_pairs(expected, observed):
-        e_changes = e_node.state_changes if e_node is not None else []
-        o_changes = o_node.state_changes if o_node is not None else []
-        pairs.extend(_pair_by_key(e_changes, o_changes))
-    return pairs
+def _is_complete(e: StateChange, o: StateChange | None) -> bool:
+    return o is not None and values_match(e.old, o.old) and values_match(e.new, o.new)
 
 
-def _transition_counts(turn: NormalizedTurn) -> int:
-    return sum(len(n.state_changes) for n in turn.nodes) if turn.nodes else len(turn.state_changes)
-
-
-def _key_sequence(turn: NormalizedTurn) -> list[str]:
-    if turn.nodes:
-        return [c.key for n in turn.nodes for c in n.state_changes]
-    return [c.key for c in turn.state_changes]
-
-
-def state_key_accuracy(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
-    """Diagnostic: fraction of expected transitions whose key was found at all."""
-    pairs = _transition_pairs(expected, observed)
-    if not pairs:
+def _fraction_of_expected(alignment: TransitionAlignment, predicate) -> float | None:
+    if not alignment.pairs:
         return None
-    return sum(1 for _, o in pairs if o is not None) / len(pairs)
+    return sum(1 for e, o in alignment.pairs if predicate(e, o)) / len(alignment.pairs)
 
 
-def old_state_accuracy(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
+def state_key_accuracy(expected_turns, observed_turns) -> float | None:
+    """Diagnostic: fraction of expected transitions whose key was found."""
+    return _fraction_of_expected(align_transitions(expected_turns, observed_turns), lambda e, o: o is not None)
+
+
+def old_state_accuracy(expected_turns, observed_turns) -> float | None:
     """Diagnostic: fraction of expected transitions whose old value matched."""
-    pairs = _transition_pairs(expected, observed)
-    if not pairs:
-        return None
-    return sum(1 for e, o in pairs if o is not None and o.old == e.old) / len(pairs)
+    return _fraction_of_expected(
+        align_transitions(expected_turns, observed_turns), lambda e, o: o is not None and values_match(e.old, o.old)
+    )
 
 
-def new_state_accuracy(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
+def new_state_accuracy(expected_turns, observed_turns) -> float | None:
     """Diagnostic: fraction of expected transitions whose new value matched."""
-    pairs = _transition_pairs(expected, observed)
-    if not pairs:
-        return None
-    return sum(1 for e, o in pairs if o is not None and o.new == e.new) / len(pairs)
+    return _fraction_of_expected(
+        align_transitions(expected_turns, observed_turns), lambda e, o: o is not None and values_match(e.new, o.new)
+    )
 
 
-def transition_accuracy(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
-    denom = max(_transition_counts(expected), _transition_counts(observed))
+def transition_accuracy(expected_turns, observed_turns) -> float | None:
+    alignment = align_transitions(expected_turns, observed_turns)
+    denom = max(alignment.expected_count, alignment.observed_count)
     if denom == 0:
         return None
-    pairs = _transition_pairs(expected, observed)
-    matched = sum(
-        1 for e, o in pairs if o is not None and o.old == e.old and o.new == e.new
-    )
-    return matched / denom
+    return sum(1 for e, o in alignment.pairs if _is_complete(e, o)) / denom
 
 
-def transition_order_similarity(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
-    return lcs.order_similarity(_key_sequence(expected), _key_sequence(observed))
+def transition_order_similarity(expected_turns, observed_turns) -> float | None:
+    node_level = exposes_nodes(expected_turns, observed_turns)
+    exp_seq = [transition_key(c) for c in trajectory_transitions(expected_turns, node_level)]
+    obs_seq = [transition_key(c) for c in trajectory_transitions(observed_turns, node_level)]
+    return lcs.order_similarity(exp_seq, obs_seq)
 
 
-def sts_turn(expected: NormalizedTurn, observed: NormalizedTurn) -> float | None:
-    """Turn-level diagnostic score (METRICS.md §3 "Levels": turn + overall)."""
+def _sts(expected_turns, observed_turns, subweights) -> float | None:
     components = {
-        "transition_accuracy": transition_accuracy(expected, observed),
-        "order": transition_order_similarity(expected, observed),
+        "transition_accuracy": transition_accuracy(expected_turns, observed_turns),
+        "order": transition_order_similarity(expected_turns, observed_turns),
     }
-    return weighted_composite(components, _STS_WEIGHTS)
+    return weighted_composite(components, subweights_for("sts", subweights))
+
+
+def sts_turn(
+    expected: NormalizedTurn, observed: NormalizedTurn, subweights: dict | None = None
+) -> float | None:
+    """Turn-level diagnostic score (METRICS.md §3 "Levels")."""
+    return _sts([expected], [observed], subweights)
 
 
 def sts_conversation(
-    expected_turns: list[NormalizedTurn], observed_turns: list[NormalizedTurn]
+    expected_turns: list[NormalizedTurn],
+    observed_turns: list[NormalizedTurn],
+    subweights: dict | None = None,
+    available: bool = True,
 ) -> float | None:
-    """Overall STS computed from the complete trajectory, not a turn-score
-    average (METRICS.md §3, Frozen Rule #10)."""
-    combined_expected = NormalizedTurn(
-        conversation_id="_",
-        turn_id=0,
-        nodes=[n for t in expected_turns for n in t.nodes],
-        state_changes=[c for t in expected_turns for c in t.state_changes],
-    )
-    combined_observed = NormalizedTurn(
-        conversation_id="_",
-        turn_id=0,
-        nodes=[n for t in observed_turns for n in t.nodes],
-        state_changes=[c for t in observed_turns for c in t.state_changes],
-    )
-    return sts_turn(combined_expected, combined_observed)
+    """Overall STS from the complete trajectory, not a turn-score average
+    (Frozen Rule 10)."""
+    if not available:
+        return None
+    return _sts(expected_turns, observed_turns, subweights)
+
+
+def _fmt_change(c: StateChange) -> dict:
+    return {"key": c.key, "old": c.old, "new": c.new}
+
+
+def state_diagnostics(expected_turns, observed_turns) -> dict:
+    alignment = align_transitions(expected_turns, observed_turns)
+    node_level = exposes_nodes(expected_turns, observed_turns)
+    exp_changes = trajectory_transitions(expected_turns, node_level)
+    obs_changes = trajectory_transitions(observed_turns, node_level)
+    by_key = {transition_key(c): c for c in exp_changes}
+    return {
+        "matched": [_fmt_change(e) for e, o in alignment.pairs if _is_complete(e, o)],
+        "order_deviations": [
+            _fmt_change(by_key[k])
+            for k in order_deviations([transition_key(c) for c in exp_changes], [transition_key(c) for c in obs_changes])
+        ],
+        "missing": [_fmt_change(e) for e, o in alignment.pairs if o is None],
+        "mismatched": [
+            {
+                "key": e.key,
+                "expected_old": e.old,
+                "expected_new": e.new,
+                "observed_old": o.old,
+                "observed_new": o.new,
+            }
+            for e, o in alignment.pairs
+            if o is not None and not _is_complete(e, o)
+        ],
+        "extra": [_fmt_change(c) for c in alignment.extra],
+    }
 
 
 def sts_conversation_result(
     expected_turns: list[NormalizedTurn],
     observed_turns: list[NormalizedTurn],
     availability_status: str = "available",
+    subweights: dict | None = None,
 ) -> MetricResult:
-    """METRICS.md §8-shaped result for overall STS."""
-    combined_expected = NormalizedTurn(
-        conversation_id="_",
-        turn_id=0,
-        nodes=[n for t in expected_turns for n in t.nodes],
-        state_changes=[c for t in expected_turns for c in t.state_changes],
+    score = sts_conversation(
+        expected_turns, observed_turns, subweights, available=availability_status != "unavailable"
     )
-    combined_observed = NormalizedTurn(
-        conversation_id="_",
-        turn_id=0,
-        nodes=[n for t in observed_turns for n in t.nodes],
-        state_changes=[c for t in observed_turns for c in t.state_changes],
-    )
-    score = sts_turn(combined_expected, combined_observed)
-
-    pairs = _transition_pairs(combined_expected, combined_observed)
-    missing = [ec.key for ec, oc in pairs if oc is None]
-    mismatched = [
-        {"key": ec.key, "expected_new": ec.new, "observed_new": oc.new}
-        for ec, oc in pairs
-        if oc is not None and (oc.old != ec.old or oc.new != ec.new)
-    ]
-
     return make_result(
-        "sts",
-        score,
-        availability_status,
-        diagnostics={"missing_keys": missing, "mismatched": mismatched},
+        "sts", score, availability_status, diagnostics=state_diagnostics(expected_turns, observed_turns)
     )

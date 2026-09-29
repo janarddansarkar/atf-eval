@@ -253,6 +253,10 @@
   .component-row { display: grid; grid-template-columns: 1fr 9rem 3.5rem; gap: 0.8rem; align-items: center; }
   .component-row .c-label { font-size: 0.8rem; color: var(--text-muted); }
   .component-row .c-label .diag { font-size: 0.62rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-left: 0.3rem; }
+  .evidence { margin: 0.2rem 0 0.9rem; padding: 0.55rem 0.8rem; border-left: 2px solid var(--border); font-size: 0.78rem; color: var(--text-muted); }
+  .evidence .evidence-label { display: block; font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 0.25rem; }
+  .evidence ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .evidence code { font-size: 0.74rem; overflow-wrap: anywhere; }
   .component-row .c-track { height: 5px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; }
   .component-row .c-fill { height: 100%; border-radius: 3px; }
   .component-row .c-fill.na { opacity: 0.35; }
@@ -340,11 +344,13 @@
       <div><dt>Golden dataset</dt><dd>{{GOLDEN_PATH}}</dd></div>
       <div><dt>Observed runs</dt><dd>{{SCENARIOS_PATH}}</dd></div>
       <div><dt>Run date</dt><dd>{{RUN_DATE}}</dd></div>
-    </dl>
+{{SETTINGS_ROWS}}    </dl>
     <p class="align-strip">
       <strong>Spec-aligned</strong>
-      Every formula and weight below matches <code>agent-eval/METRICS.md</code>
-      (the frozen spec) &sect;2&ndash;&sect;7 exactly: NTS 40/30/30, STS 70/30, TIS 25/20/25/20/10, RS 70/30, OS 50/30/20, ATF 30/30/15/10/15.
+      Every formula and weight below implements <code>agent-eval/METRICS.md</code> (the frozen spec)
+      &sect;2&ndash;&sect;7: NTS 40/30/30, STS 70/30, TIS 25/20/25/20/10, RS 70/30, OS 50/30/20,
+      ATF 30/30/15/10/15 (the ATF weights this run used are listed above).
+      Evidence a trace does not record is N/A; evidence it records but the agent got wrong is a loss.
       The LLM/multimodal metrics (&sect;13&ndash;&sect;24) call <code>atf_eval.llm_evals</code>'s
       real evaluator code, never a re-derived rubric.
     </p>
@@ -357,8 +363,8 @@
     </div>
     <p class="section-intro">
       ATF blends five independent metrics into one fidelity score. Each one answers a
-      different question about the agent's run &mdash; a metric with nothing to evaluate
-      reports <strong>N/A</strong>, never a zero (METRICS.md Frozen Rule&nbsp;11).
+      different question about the agent's run &mdash; a metric whose evidence the trace does not
+      record reports <strong>N/A</strong>, never a zero (METRICS.md Frozen Rule&nbsp;11).
     </p>
     <div class="glossary-grid">
 
@@ -367,7 +373,10 @@
         <h3>Node Traversal Similarity</h3>
         <p class="plain">Did the agent take the right steps, in the right order, without skipping any or adding extra ones?</p>
         <span class="weight-tag">30% of ATF</span>
-        <details><summary>formula</summary><pre>NTS = .40&times;Coverage + .30&times;Precision + .30&times;Order</pre></details>
+        <details><summary>formula</summary><pre>NTS = .40&times;Coverage + .30&times;Precision + .30&times;Order
+Matched nodes: exact, position-aware
+  sequential (LCS) alignment
+Order: LCS / max(|expected|, |observed|)</pre></details>
       </div>
 
       <div class="glossary-card">
@@ -375,7 +384,10 @@
         <h3>State Transition Similarity</h3>
         <p class="plain">Did the right facts about the conversation change at the right time &mdash; e.g. "customer_verified: false &rarr; true"?</p>
         <span class="weight-tag">30% of ATF</span>
-        <details><summary>formula</summary><pre>STS = .70&times;Transition Accuracy + .30&times;Order</pre></details>
+        <details><summary>formula</summary><pre>STS = .70&times;Transition Accuracy + .30&times;Order
+Accuracy: key+old+new all match, compared
+  within LCS-aligned nodes (node-level state)
+Order: LCS over full (key, old, new)</pre></details>
       </div>
 
       <div class="glossary-card">
@@ -384,7 +396,11 @@
         <p class="plain">Did the agent call the right backend tools, with the right inputs, in the right order?</p>
         <span class="weight-tag">15% of ATF</span>
         <details><summary>formula</summary><pre>TIS = .25&times;Coverage + .20&times;Precision
-    + .25&times;Identity + .20&times;Input + .10&times;Order</pre></details>
+    + .25&times;Identity + .20&times;Input + .10&times;Order
+Aligned within LCS-aligned nodes when the
+  trace supports node association (else per
+  turn); Identity = correct / aligned pairs;
+  Input over matched (same-tool) pairs</pre></details>
       </div>
 
       <div class="glossary-card">
@@ -392,7 +408,9 @@
         <h3>Routing Similarity</h3>
         <p class="plain">Given what the customer said, did the agent choose the right conversational direction? Judged by an LLM, not just field-matching.</p>
         <span class="weight-tag">10% of ATF</span>
-        <details><summary>formula</summary><pre>RS = .70&times;Semantic Judge Score + .30&times;Order</pre></details>
+        <details><summary>formula</summary><pre>RS = .70&times;Semantic Judge Score + .30&times;Order
+Order over path decisions; no judge verdict
+  &rArr; routing not evaluable &rArr; RS N/A</pre></details>
       </div>
 
       <div class="glossary-card">
@@ -400,7 +418,9 @@
         <h3>Outcome Similarity</h3>
         <p class="plain">Did the conversation land on the correct final result, with the correct details (amount, frequency, duration)?</p>
         <span class="weight-tag">15% of ATF</span>
-        <details><summary>formula</summary><pre>OS = .50&times;Identity + .30&times;Attributes + .20&times;Completion</pre></details>
+        <details><summary>formula</summary><pre>OS = .50&times;Identity + .30&times;Attributes + .20&times;Completion
+Completion: required outcome attributes
+  achieved / required (N/A if none declared)</pre></details>
       </div>
 
       <div class="glossary-card">
@@ -509,14 +529,15 @@
       <h3>&#9888; Auto-detected scoring caveats</h3>
       {{NOTES}}
       <p>
-        <strong>Recommendation:</strong> read NTS / STS / TIS as the trustworthy signal of each
-        deviation. Treat ATF as directional only where a run's OS is flagged &#9888; above.
+        <strong>Recommendation:</strong> read each component, and its Evidence list, as the signal
+        for a deviation. When a run's metric coverage is below 100%, its ATF rests on fewer
+        components than a fully evidenced run's, so compare it with care.
       </p>
     </div>
   </section>
 
   <footer>
-    <span>Formulas verified line-for-line against agent-eval/METRICS.md &sect;2&ndash;&sect;7 (deterministic) and &sect;13&ndash;&sect;24 (LLM/multimodal, frozen spec). LLM rationale supports auditability but is not itself authoritative (&sect;23).</span>
+    <span>Formulas implement agent-eval/METRICS.md &sect;2&ndash;&sect;7 (deterministic) and &sect;13&ndash;&sect;24 (LLM/multimodal, frozen spec). LLM rationale supports auditability but is not itself authoritative (&sect;23). LLM rationale supports auditability but is not itself authoritative (&sect;23).</span>
     <span class="weights">ATF weights: nts .30 &middot; sts .30 &middot; tis .15 &middot; rs .10 &middot; os .15</span>
   </footer>
 

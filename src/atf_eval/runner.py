@@ -8,11 +8,12 @@ from dataclasses import dataclass
 import anthropic
 
 from atf_eval.adapter import TrajectoryAgent
-from atf_eval.aggregate import DEFAULT_WEIGHTS, atf_score
-from atf_eval.availability import compute_availability
+from atf_eval.aggregate import DEFAULT_SUBWEIGHTS, DEFAULT_WEIGHTS, atf_score
+from atf_eval.availability import resolve_availability
 from atf_eval.dataset import GoldenTurn
 from atf_eval.metric_result import MetricResult
 from atf_eval.metrics import nodes, outcome, routing, state, tools
+from atf_eval.metrics.routing import RoutingVerdict
 from atf_eval.normalized import NormalizedTurn
 
 
@@ -46,6 +47,69 @@ class ConversationResult:
     metric_results: dict[str, MetricResult]
 
 
+@dataclass
+class TrajectoryScore:
+    """Conversation-level ATF for one (Golden, Observed) pair -- the pure
+    scoring half of an evaluation, with no agent invocation."""
+    nts: float | None
+    sts: float | None
+    tis: float | None
+    rs: float | None
+    os: float | None
+    atf: float | None
+    metric_coverage: float
+    availability: dict[str, str]
+    metric_results: dict[str, MetricResult]
+
+    @property
+    def components(self) -> dict[str, float | None]:
+        return {"nts": self.nts, "sts": self.sts, "tis": self.tis, "rs": self.rs, "os": self.os}
+
+
+def score_trajectory(
+    expected_turns: list[NormalizedTurn],
+    observed_turns: list[NormalizedTurn],
+    verdicts: list[RoutingVerdict | None] | None = None,
+    availability: dict[str, str] | None = None,
+    weights: dict[str, float] | None = None,
+    subweights: dict[str, dict[str, float]] | None = None,
+    tolerance: float = 0.0,
+) -> TrajectoryScore:
+    """Score one observed trajectory against one Golden trajectory.
+
+    `availability` is the already-resolved per-dimension availability (see
+    availability.resolve_availability); a dimension that is not `available`
+    makes its metric N/A. `verdicts` are the per-turn routing-judge verdicts
+    (None entries for turns that were not judged)."""
+    weights = weights or DEFAULT_WEIGHTS
+    subweights = subweights or DEFAULT_SUBWEIGHTS
+    availability = availability or resolve_availability(judge_configured=bool(verdicts))
+    verdicts = verdicts or []
+
+    metric_results = {
+        "nts": nodes.nts_conversation_result(expected_turns, observed_turns, availability["nodes"], subweights),
+        "sts": state.sts_conversation_result(expected_turns, observed_turns, availability["state"], subweights),
+        "tis": tools.tis_conversation_result(
+            expected_turns, observed_turns, tolerance, availability["tools"], subweights
+        ),
+        "rs": routing.rs_conversation_result(
+            expected_turns, observed_turns, verdicts, availability["routing"], subweights
+        ),
+        "os": outcome.os_conversation_result(
+            expected_turns, observed_turns, tolerance, availability["outcome"], subweights
+        ),
+    }
+    group_scores = {k: r.score for k, r in metric_results.items()}
+    atf, coverage = atf_score(group_scores, weights)
+    return TrajectoryScore(
+        **group_scores,
+        atf=atf,
+        metric_coverage=coverage,
+        availability=availability,
+        metric_results=metric_results,
+    )
+
+
 def _evaluate_conversation(
     conversation_id: str,
     golden_turns: list[GoldenTurn],
@@ -55,12 +119,13 @@ def _evaluate_conversation(
     judge_client: anthropic.Anthropic | None = None,
     judge_model: str = "claude-opus-5",
     judge_effort: str | None = None,
+    subweights: dict[str, dict[str, float]] | None = None,
 ) -> ConversationResult:
     history: list[NormalizedTurn] = []
     expected_turns: list[NormalizedTurn] = []
     observed_turns: list[NormalizedTurn] = []
     turn_results: list[TurnResult] = []
-    per_turn_semantic_scores: list[float | None] = []
+    verdicts: list[RoutingVerdict | None] = []
     broken = False
 
     for golden_turn in golden_turns:
@@ -71,7 +136,7 @@ def _evaluate_conversation(
             observed_turns.append(
                 NormalizedTurn(conversation_id=conversation_id, turn_id=golden_turn.turn_id)
             )
-            per_turn_semantic_scores.append(None)
+            verdicts.append(None)
             turn_results.append(
                 TurnResult(
                     conversation_id=conversation_id,
@@ -94,7 +159,7 @@ def _evaluate_conversation(
             observed_turns.append(
                 NormalizedTurn(conversation_id=conversation_id, turn_id=golden_turn.turn_id)
             )
-            per_turn_semantic_scores.append(None)
+            verdicts.append(None)
             turn_results.append(
                 TurnResult(
                     conversation_id=conversation_id,
@@ -111,60 +176,53 @@ def _evaluate_conversation(
         observed_turns.append(observed_turn)
         history.append(observed_turn)
 
-        semantic_score = routing.semantic_routing_score(
+        verdict = routing.routing_verdict(
             golden_turn.user_input, expected_turn, observed_turn, judge_client, judge_model, judge_effort
         )
-        per_turn_semantic_scores.append(semantic_score)
+        verdicts.append(verdict)
 
         turn_results.append(
             TurnResult(
                 conversation_id=conversation_id,
                 turn_id=golden_turn.turn_id,
                 status="ok",
-                nts=nodes.nts_turn(expected_turn, observed_turn),
-                sts=state.sts_turn(expected_turn, observed_turn),
-                tis=tools.tis_turn(expected_turn, observed_turn, tolerance),
-                rs=routing.rs_turn(semantic_score),
+                nts=nodes.nts_turn(expected_turn, observed_turn, subweights),
+                sts=state.sts_turn(expected_turn, observed_turn, subweights),
+                tis=tools.tis_turn(expected_turn, observed_turn, tolerance, subweights),
+                rs=routing.rs_turn(verdict.score if verdict else None),
                 latency_ms=latency_ms,
             )
         )
 
-    # overall NTS/STS/TIS are computed from the complete concatenated
-    # trajectory, not by averaging turn scores (METRICS.md Frozen Rule #10)
-    nts_score = nodes.nts_conversation(expected_turns, observed_turns)
-    sts_score = state.sts_conversation(expected_turns, observed_turns)
-    tis_score = tools.tis_conversation(expected_turns, observed_turns, tolerance)
-    rs_score = routing.rs_conversation(expected_turns, observed_turns, per_turn_semantic_scores)
-    os_score = outcome.os_conversation(expected_turns, observed_turns, tolerance)
-
-    group_scores = {"nts": nts_score, "sts": sts_score, "tis": tis_score, "rs": rs_score, "os": os_score}
-    atf, coverage = atf_score(group_scores, weights)
-    availability = compute_availability(expected_turns, observed_turns, judge_configured=judge_client is not None)
-
-    metric_results = {
-        "nts": nodes.nts_conversation_result(expected_turns, observed_turns, availability["nodes"]),
-        "sts": state.sts_conversation_result(expected_turns, observed_turns, availability["state"]),
-        "tis": tools.tis_conversation_result(expected_turns, observed_turns, tolerance, availability["tools"]),
-        "rs": routing.rs_conversation_result(
-            expected_turns, observed_turns, per_turn_semantic_scores, availability["routing"]
-        ),
-        "os": outcome.os_conversation_result(expected_turns, observed_turns, tolerance, availability["outcome"]),
-    }
+    availability = resolve_availability(
+        getattr(adapter, "availability", None), judge_configured=judge_client is not None
+    )
+    # overall scores are computed from the complete trajectory, not by
+    # averaging turn scores (Frozen Rule 10)
+    scored = score_trajectory(
+        expected_turns,
+        observed_turns,
+        verdicts=verdicts,
+        availability=availability,
+        weights=weights,
+        subweights=subweights,
+        tolerance=tolerance,
+    )
 
     return ConversationResult(
         conversation_id=conversation_id,
         turns=turn_results,
-        nts=nts_score,
-        sts=sts_score,
-        tis=tis_score,
-        rs=rs_score,
-        os=os_score,
-        atf=atf,
-        metric_coverage=coverage,
+        nts=scored.nts,
+        sts=scored.sts,
+        tis=scored.tis,
+        rs=scored.rs,
+        os=scored.os,
+        atf=scored.atf,
+        metric_coverage=scored.metric_coverage,
         expected_turns=expected_turns,
         observed_turns=observed_turns,
         availability=availability,
-        metric_results=metric_results,
+        metric_results=scored.metric_results,
     )
 
 
@@ -177,16 +235,17 @@ def run_evaluation(
     judge_client: anthropic.Anthropic | None = None,
     judge_model: str = "claude-opus-5",
     judge_effort: str | None = None,
+    subweights: dict[str, dict[str, float]] | None = None,
 ) -> list[ConversationResult]:
-    """`judge_client` powers RS's LLM-based routing judgment (METRICS.md §5).
-    Pass None to skip it -- RS then reports N/A rather than making any LLM
-    calls, and every other metric group is unaffected."""
+    """`judge_client` powers RS's LLM routing judge (METRICS.md §5). Pass None
+    to skip it -- RS then reports N/A (routing cannot be evaluated without the
+    semantic judgment) and every other metric group is unaffected."""
     weights = weights or DEFAULT_WEIGHTS
     items = list(conversations.items())
 
     def _run(cid: str, turns: list[GoldenTurn]) -> ConversationResult:
         return _evaluate_conversation(
-            cid, turns, adapter, weights, tolerance, judge_client, judge_model, judge_effort
+            cid, turns, adapter, weights, tolerance, judge_client, judge_model, judge_effort, subweights
         )
 
     if concurrency <= 1:

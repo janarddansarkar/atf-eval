@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from atf_eval.metrics.evidence import turn_tool_calls, turn_transitions
 from atf_eval.metrics.state import sts_turn
 from atf_eval.normalized import NormalizedTurn
 
@@ -52,8 +53,8 @@ def find_key_state_deviation(
         return None
     expected, observed = worst_pair
 
-    observed_by_key = {c.key: c for c in observed.state_changes}
-    for ec in expected.state_changes:
+    observed_by_key = {c.key: c for c in turn_transitions(observed)}
+    for ec in turn_transitions(expected):
         oc = observed_by_key.get(ec.key)
         if oc is None or oc.old != ec.old or oc.new != ec.new:
             return StateDeviation(
@@ -72,8 +73,8 @@ def find_key_tool_deviation(
 ) -> ToolDeviation | None:
     """First expected tool call that never shows up in the observed trace."""
     for expected, observed in zip(expected_turns, observed_turns):
-        observed_names = {t.tool_id for t in observed.tool_calls}
-        for tc in expected.tool_calls:
+        observed_names = {t.tool_id for t in turn_tool_calls(observed)}
+        for tc in turn_tool_calls(expected):
             if tc.tool_id not in observed_names:
                 return ToolDeviation(
                     turn_id=expected.turn_id, expected_tool=tc.tool_id, observed="Not invoked"

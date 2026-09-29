@@ -13,6 +13,13 @@ class TrajectoryAgent(Protocol):
     into the common `NormalizedTurn` shape. `history` is the normalized
     observed trajectory of every prior turn in this conversation (in order),
     so a stateful/multi-turn agent can rebuild its own context.
+
+    Optionally, the adapter declares which evidence its traces expose via an
+    `availability` attribute, e.g. `{"state": "unavailable"}` for an agent
+    whose traces never record state. A dimension declared unavailable makes
+    its metric N/A; any dimension not declared is treated as available, so
+    missing events on it count as agent failures (METRICS.md §11
+    "Insufficient evidence", §21).
     """
 
     def run_turn(

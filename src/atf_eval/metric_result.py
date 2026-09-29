@@ -38,7 +38,9 @@ def make_result(
     return MetricResult(
         metric_id=metric_id,
         score=score,
-        status=availability_status if applicable else "unavailable",
+        # N/A because the evidence was declared unavailable vs. N/A because
+        # there was nothing to compare (e.g. no expected or observed events)
+        status=availability_status if applicable or availability_status != "available" else "not_applicable",
         applicability=applicable,
         coverage=1.0 if applicable else 0.0,
         diagnostics=diagnostics or {},

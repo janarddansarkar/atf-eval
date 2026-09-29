@@ -17,7 +17,11 @@ import jsonschema
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-AGENT_EVAL_MAIN = REPO_ROOT / "agent-eval-main"
+# the spec repo may be checked out as either folder name
+AGENT_EVAL_MAIN = next(
+    (p for p in (REPO_ROOT / "agent-eval-main", REPO_ROOT / "agent-eval") if p.exists()),
+    REPO_ROOT / "agent-eval-main",
+)
 
 
 @pytest.fixture(scope="session")

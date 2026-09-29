@@ -8,12 +8,13 @@ from pathlib import Path
 
 import anthropic
 
-from atf_eval.aggregate import DEFAULT_WEIGHTS
+from atf_eval.aggregate import resolve_weights
 from atf_eval.dataset import group_by_conversation, load_dataset
 from atf_eval.loader import load_adapter
 from atf_eval.report import aggregate, render_results_table, write_reports
 from atf_eval.runner import run_evaluation
 from atf_eval.scaffold import write_scaffold
+from atf_eval.settings import evaluation_settings
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -24,7 +25,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dataset", required=True, help="Golden dataset JSONL path")
     run_parser.add_argument("--adapter", required=True, help="module.path:ClassName")
     run_parser.add_argument("--output-dir", default="./results")
-    run_parser.add_argument("--weights-file", default=None, help="JSON override of {nts,sts,tis,rs,os} weights")
+    run_parser.add_argument(
+        "--weights-file",
+        default=None,
+        help='JSON override of the ATF component weights {"nts", "sts", "tis", "rs", "os"} (must sum to 1); '
+        "defaults to METRICS.md §7",
+    )
     run_parser.add_argument("--tool-arg-tolerance", type=float, default=0.0)
     run_parser.add_argument("--limit", type=int, default=None, help="Only evaluate the first N conversations")
     run_parser.add_argument("--concurrency", type=int, default=1)
@@ -93,10 +99,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     adapter = load_adapter(args.adapter)
 
-    weights = DEFAULT_WEIGHTS
+    weights_config = None
     if args.weights_file:
         with open(args.weights_file, encoding="utf-8") as f:
-            weights = json.load(f)
+            weights_config = json.load(f)
+    weights, subweights = resolve_weights(weights_config)
 
     judge_client = None
     if not args.no_routing_judge:
@@ -113,6 +120,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         conversations,
         adapter,
         weights=weights,
+        subweights=subweights,
         concurrency=args.concurrency,
         tolerance=args.tool_arg_tolerance,
         judge_client=judge_client,
@@ -120,7 +128,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         judge_effort=args.effort,
     )
 
-    json_path, csv_path = write_reports(results, args.output_dir)
+    settings = evaluation_settings(
+        args.judge_model if judge_client else None, args.effort, args.tool_arg_tolerance, weights, subweights
+    )
+    json_path, csv_path = write_reports(results, args.output_dir, settings)
     _print_summary(aggregate(results))
     print("\nPer-conversation results:\n")
     print(render_results_table([

@@ -108,9 +108,8 @@ def load_golden_turns(path: Path) -> list[NormalizedTurn]:
             )
             for n in t.get("nodes", [])
         ]
-        # TIS operates on the turn-level flat tool_calls list, not node-level
-        # (tools.py: "no adapter currently attaches tool calls to a node") --
-        # mirror that here so TIS has something to compare.
+        # a flattened copy of the node-level calls; the metrics de-duplicate
+        # it against the node-level events (atf_eval.metrics.evidence)
         flat_tool_calls = [tc for n in nodes for tc in n.tool_calls]
         turns.append(
             NormalizedTurn(

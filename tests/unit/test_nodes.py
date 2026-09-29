@@ -37,7 +37,8 @@ def test_reordered_nodes_hurts_order_only():
     expected = _turn(["a", "b", "c"])
     observed = _turn(["c", "b", "a"])
     score = nts_turn(expected, observed)
-    # coverage=precision=1.0 (all present as a set), order similarity < 1.0
+    # matched nodes come from the LCS alignment (METRICS.md §2), so coverage,
+    # precision and order all drop
     assert score is not None
     assert score < 1.0
 

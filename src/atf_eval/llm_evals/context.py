@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from atf_eval.metrics.evidence import turn_state_changes, turn_tool_calls
 from atf_eval.normalized import NormalizedTurn, TurnTiming
 
 
@@ -138,15 +139,12 @@ def _format_timing(t: TurnTiming) -> str:
 def _tools(turn: NormalizedTurn) -> list[ToolEvidence]:
     return [
         ToolEvidence(tool_id=tc.tool_id, arguments=dict(tc.arguments), result=tc.result)
-        for tc in turn.tool_calls
+        for tc in turn_tool_calls(turn)
     ]
 
 
 def _state(turn: NormalizedTurn) -> list[tuple[str, Any, Any]]:
-    changes = list(turn.state_changes)
-    for n in turn.nodes:
-        changes.extend(n.state_changes)
-    return [(c.key, c.old, c.new) for c in changes]
+    return [(c.key, c.old, c.new) for c in turn_state_changes(turn)]
 
 
 def _routing(turn: NormalizedTurn) -> tuple[str | None, str | None] | None:

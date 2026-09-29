@@ -16,6 +16,9 @@ import anthropic
 from pydantic import BaseModel
 
 
+ROUTING_JUDGE_MAX_TOKENS = 1024
+
+
 class RoutingJudgeScore(BaseModel):
     verdict: Literal["correct", "partial", "incorrect"]
     reasoning: str
@@ -90,7 +93,7 @@ def run_routing_judge(
     )
     parse_kwargs = dict(
         model=model,
-        max_tokens=1024,
+        max_tokens=ROUTING_JUDGE_MAX_TOKENS,
         system=ROUTING_JUDGE_SYSTEM_PROMPT,
         output_format=RoutingJudgeScore,
         messages=[{"role": "user", "content": user_prompt}],

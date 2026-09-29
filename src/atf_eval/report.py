@@ -118,7 +118,12 @@ def aggregate(results: list[ConversationResult]) -> dict:
     }
 
 
-def write_reports(results: list[ConversationResult], output_dir: str) -> tuple[Path, Path]:
+def write_reports(
+    results: list[ConversationResult], output_dir: str, settings: dict | None = None
+) -> tuple[Path, Path]:
+    """`settings` (see atf_eval.settings.evaluation_settings) is written into
+    the JSON report so the judge configuration, matching rules and weights
+    are auditable alongside the scores (METRICS.md §8, §23)."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -143,6 +148,7 @@ def write_reports(results: list[ConversationResult], output_dir: str) -> tuple[P
                 "coverage": _mean_of([r.metric_coverage for r in results]) or 0.0,
                 "diagnostics": {"availability": _availability_summary(results)},
                 "metadata": {"total_conversations": len(results), "all_metrics_applicable": all_metrics_applicable},
+                "settings": settings or {},
                 "summary": aggregate(results),
                 "conversations": [
                     {
@@ -154,12 +160,15 @@ def write_reports(results: list[ConversationResult], output_dir: str) -> tuple[P
                         "os": r.os,
                         "atf": r.atf,
                         "metric_coverage": r.metric_coverage,
+                        "availability": r.availability,
+                        "diagnostics": {k: mr.diagnostics for k, mr in r.metric_results.items()},
                         "turns": [asdict(t) for t in r.turns],
                     }
                     for r in results
                 ],
             },
             indent=2,
+            default=str,  # diagnostics carry arbitrary state/argument values
         ),
         encoding="utf-8",
     )
