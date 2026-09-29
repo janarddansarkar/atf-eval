@@ -21,7 +21,7 @@ each run's panel holds both tracks, not two separate dashboards/tab systems):
   section, right after that run's NTS/STS/TIS/RS/OS meters.
 
 Every score is verified against `agent-eval/METRICS.md`, the frozen spec. The
-code follows METRICS.md strictly; the paper (`main_mod_jana.tex`) is aligned to the code.
+code follows METRICS.md strictly.
 
 ## When to use this
 
