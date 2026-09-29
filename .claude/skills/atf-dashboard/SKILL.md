@@ -20,7 +20,8 @@ each run's panel holds both tracks, not two separate dashboards/tab systems):
   Rendered inside each run's panel as an "LLM & Multimodal Evaluation"
   section, right after that run's NTS/STS/TIS/RS/OS meters.
 
-Every score is verified against `agent-eval/METRICS.md`, the frozen spec.
+Every score is verified against `agent-eval/METRICS.md`, the frozen spec. The
+code follows METRICS.md strictly; the paper (`main_mod_jana.tex`) is aligned to the code.
 
 ## When to use this
 
@@ -62,7 +63,8 @@ prior ATF dashboard in this project).
    model+prompt), so a repeat run of the same fixtures against the same
    prompts is near-instant and makes zero new API calls; only new/changed
    (metric, turn, prompt) combinations hit the network. Useful flags:
-   - `--no-routing-judge` -- RS reports N/A instead of calling the judge
+   - `--no-routing-judge` -- RS reports N/A instead of calling the judge (the judge
+     score is required for RS; routing order is still shown as panel evidence)
    - `--no-llm-evals` -- skip Groups 1-5 entirely (each panel then has no
      "LLM & Multimodal Evaluation" section, and no `atf_llm_metrics_<ts>.csv`)
    - `--judge-model` (default `claude-opus-5`), `--effort` (default `low`)
@@ -97,9 +99,10 @@ prior ATF dashboard in this project).
    how many of the 32 LLM metrics actually scored vs. N/A per run (Group 5 is
    expected to be all-N/A on text-only fixtures -- that's correct per
    METRICS.md §18, not a gap), and call out any auto-detected caveat from the
-   dashboard's "Notes for the reader" section (e.g. an OS score that's really
-   a fixture-normalization gap, not a real outcome miss) so the user doesn't
-   misread a flagged number.
+   dashboard's "Notes for the reader" section (e.g. OS reported N/A because a
+   fixture records no `outcome` field, so its ATF is renormalized over fewer
+   components -- check that run's metric coverage) so the user doesn't misread
+   a number.
 
 ## What's auto-generated vs. fixed
 
@@ -121,11 +124,17 @@ prior ATF dashboard in this project).
   colored pill -- Group 5's 13 metrics are excluded from that denominator so
   a correct all-N/A Group 5 doesn't read as a coverage gap), and the caveat
   notes (detected via `annotate_notes()` in the script: an observed run
-  missing an `outcome` field entirely -- vs. one that carries a real
-  `outcome` that just doesn't match golden's, which scores a genuine 0.000
-  rather than being flagged --, RS being N/A everywhere because no fixture
-  carries `routing`, and a `wrong_tool_input`-style deviation where golden's
-  own expected args are `{}` so nothing was there to get wrong).
+  missing an `outcome` field entirely, which the fixture adapter declares as
+  outcome-unavailable so OS is N/A -- vs. one that carries a real `outcome`
+  that just doesn't match golden's, which scores a genuine 0.000 --, RS being
+  N/A everywhere because no judge was configured, and a `wrong_tool_input`-style
+  deviation where golden's own expected args are `{}` so nothing was there to
+  get wrong), plus each metric's Evidence list (missing/extra/reordered nodes,
+  mismatched transitions, substituted tools and argument mismatches, judge
+  verdicts with rationale, wrong attributes / unmet completion conditions).
+  Availability: a fixture's explicit `availability` block wins; otherwise a
+  dimension is available iff the raw trace carries that field at all
+  (`declared_availability()`).
 - **Fixed** (same for any dataset, since these describe the frozen spec, not a
   particular run): the "What each metric means" glossary cards and their
   formulas, the METRICS.md §11 deviation-taxonomy → primary-metric mapping in
@@ -135,6 +144,7 @@ prior ATF dashboard in this project).
 
 - New golden scenario dropped into `agent-eval/golden/`: nothing to do --
   `discover_goldens()` picks it up and gets its own baseline run.
+- `--weights-file` overrides the ATF component weights (must sum to 1).
 - New scenario fixture dropped into the scenarios directory: nothing to do,
   as long as it sets `golden_scenario` to the matching golden's
   `metadata.scenario_id` (or `trace_id`) -- `discover_runs()` routes it
@@ -149,11 +159,12 @@ prior ATF dashboard in this project).
   attaches a trace-level `outcome` (if the fixture has one) to its last turn,
   same convention as golden -- don't drop that when touching this function.
 - METRICS.md §1-§12 (deterministic) formulas/weights change: nothing here to
-  touch -- this command only calls `atf_eval`'s metric functions, never
-  reimplements a formula, so a spec change should land in `src/atf_eval/`
-  first and this command picks it up for free. Re-verify alignment by
-  re-reading `agent-eval/METRICS.md` §2-§7 against `src/atf_eval/aggregate.py`
-  and `src/atf_eval/metrics/*.py`.
+  touch -- this command only calls `atf_eval`'s metric functions via
+  `runner.score_trajectory`, never reimplements a formula, so a spec change
+  should land in `src/atf_eval/` first and this command picks it up for free.
+  Re-verify alignment by re-reading `agent-eval/METRICS.md` §2-§9 against
+  `src/atf_eval/aggregate.py` and `src/atf_eval/metrics/*.py`;
+  `tests/unit/test_metrics_spec.py` pins the spec's rules and its §7 example.
 - METRICS.md Part B (§13-§24) metric definitions/rubrics/scoring/levels
   change: land the change in `src/atf_eval/llm_evals/registry.py`
   (`MetricSpec` rows) first -- this command only calls

@@ -31,8 +31,9 @@ Four of five metric groups (NTS, STS, TIS, OS) are fully deterministic — close
 formulas, no LLM calls. **RS is the one exception**: it's an LLM-based semantic judge
 (METRICS.md §5) of whether the agent's routing choice was appropriate given the
 conversation, not a field comparison. Without `ANTHROPIC_API_KEY` set (or with
-`--no-routing-judge`), RS falls back to just its deterministic order-similarity component
-and reports the semantic half as N/A — the rest of the framework needs no API key at all.
+`--no-routing-judge`), routing cannot be evaluated, so RS is N/A and excluded from ATF
+(routing order is still reported as a diagnostic) — the rest of the framework needs no
+API key at all.
 
 ## Integrate your own agent
 
@@ -42,6 +43,11 @@ Implement the `TrajectoryAgent` protocol from `atf_eval.adapter`:
 from atf_eval.normalized import NormalizedTurn, NormalizedNode, ToolCall, Routing, Outcome
 
 class MyAgentAdapter:
+    # Declare evidence your traces never expose, so those metrics are N/A instead of
+    # scored as failures (METRICS.md §11 "Insufficient evidence"). Undeclared
+    # dimensions count as available. Optional.
+    availability = {"state": "unavailable"}
+
     def run_turn(self, conversation_id, turn_id, user_input, history):
         raw_trace = my_agent.invoke(user_input, history=history)
         nodes = [NormalizedNode(node_id=n) for n in raw_trace.nodes_visited]
@@ -97,10 +103,10 @@ final turn, since Outcome Similarity is evaluated conversation-wide.
 
 | Group | Weight | What it measures |
 |---|---:|---|
-| NTS — Node Traversal Similarity | 30% | node coverage (40%) / precision (30%) / order (30%); recall is a diagnostic (== coverage) |
-| STS — State Transition Similarity | 30% | transition accuracy (70%) / order (30%); key/old/new-value accuracy are diagnostics. Aligned per-node via `NormalizedNode.state_changes[]`, not turn-level |
-| TIS — Tool Invocation Similarity | 15% | tool coverage / precision / identity / input args / order |
-| RS — Routing Similarity | 10% | **LLM judge** semantic correctness (70%) + order (30%) — see above |
+| NTS — Node Traversal Similarity | 30% | node coverage (40%) / precision (30%) / order (30%) over the exact, position-aware (LCS) node alignment; recall is a diagnostic (== coverage); missing / extra / reordered nodes in diagnostics |
+| STS — State Transition Similarity | 30% | transition accuracy (70%) / order over full (key, old, new) transitions (30%); key/old/new-value accuracy are diagnostics. Compared within LCS-aligned nodes via `NormalizedNode.state_changes[]`, not turn-level; unchanged values are not transitions |
+| TIS — Tool Invocation Similarity | 15% | tool coverage / precision / identity / input args / order; tools aligned within LCS-aligned nodes when the trace attaches them to nodes, else per turn |
+| RS — Routing Similarity | 10% | **LLM judge** semantic correctness (70%) + order of path decisions (30%) — see above |
 | OS — Outcome Similarity | 15% | outcome identity / attributes / completion (conversation-level) |
 
 Overall NTS/STS/TIS/RS are computed from the **complete concatenated trajectory**, not by
