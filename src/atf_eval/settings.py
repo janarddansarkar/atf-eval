@@ -21,12 +21,14 @@ def evaluation_settings(
     tolerance: float = 0.0,
     weights: dict | None = None,
     subweights: dict | None = None,
+    judge_provider: str | None = None,
 ) -> dict:
     """`judge_model=None` records that no routing judge was configured."""
     return {
         "routing_judge": (
             {
                 "configured": True,
+                "provider": judge_provider,
                 "model": judge_model,
                 "effort": judge_effort,
                 "max_tokens": ROUTING_JUDGE_MAX_TOKENS,

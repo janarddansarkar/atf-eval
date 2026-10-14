@@ -36,6 +36,7 @@ from pathlib import Path
 
 from atf_eval.aggregate import resolve_weights
 from atf_eval.availability import resolve_availability
+from atf_eval.llm_provider import DEFAULT_PROVIDER, PROVIDER_ENV, PROVIDERS, provider_name
 from atf_eval.metrics.nodes import (
     node_coverage,
     node_order_similarity,
@@ -250,7 +251,7 @@ def _routing_verdicts(
     expected: list[NormalizedTurn],
     observed: list[NormalizedTurn],
     judge_client,
-    judge_model: str,
+    judge_model: str | None,
     judge_effort: str | None,
 ) -> list:
     """One RS routing-judge verdict per observed turn (METRICS.md §5), aligned to
@@ -282,7 +283,7 @@ def score_components(
     expected: list[NormalizedTurn],
     observed: list[NormalizedTurn],
     judge_client=None,
-    judge_model: str = "claude-opus-5",
+    judge_model: str | None = None,
     judge_effort: str | None = None,
     declared: dict[str, str] | None = None,
     weights: dict | None = None,
@@ -819,8 +820,9 @@ def render_settings_rows(settings: dict) -> str:
     """The settings recorded with the results for auditability (METRICS.md §8, §23)."""
     judge = settings["routing_judge"]
     if judge.get("configured"):
+        provider = f"{html_escape(str(judge['provider']))}: " if judge.get("provider") else ""
         judge_text = (
-            f"{html_escape(str(judge['model']))}, effort {html_escape(str(judge['effort']))}, "
+            f"{provider}{html_escape(str(judge['model']))}, effort {html_escape(str(judge['effort']))}, "
             f"max_tokens {judge['max_tokens']}, temperature {html_escape(judge['temperature'])}, "
             f"prompt <code>{html_escape(judge['system_prompt_id'])}</code>"
         )
@@ -899,7 +901,7 @@ def render_dashboard(
 # ---------------------------------------------------------------------------
 
 
-def run_llm_evals(runs: list[dict], client, model: str, effort: str | None) -> None:
+def run_llm_evals(runs: list[dict], client, model: str | None, effort: str | None) -> None:
     """Attach a ConversationLLMReport to each run under run['llm']. Runs are
     processed a few at a time and each conversation fans its own judge calls
     out to a thread pool, so the first full build is I/O-bound rather than
@@ -1095,10 +1097,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Directory of observed-fixture *.json files (default: ./tests/fixtures/scenarios).",
     )
     parser.add_argument("--output-dir", default="results", help="Default: ./results")
-    parser.add_argument("--judge-model", default="claude-opus-5",
-                        help="Anthropic model for RS's routing judge and the Group 1-5 LLM metrics.")
+    parser.add_argument("--provider", choices=list(PROVIDERS), default=None,
+                        help=f"LLM provider for RS's routing judge and the Group 1-5 LLM metrics "
+                             f"(default: ${PROVIDER_ENV}, else {DEFAULT_PROVIDER}).")
+    parser.add_argument("--judge-model", default=None,
+                        help="Model for RS's routing judge and the Group 1-5 LLM metrics "
+                             "(default: the provider's default model).")
     parser.add_argument("--effort", choices=["low", "medium", "high", "xhigh", "max"], default="low",
-                        help="Judge model effort (default: low -- fine for rubric scoring).")
+                        help="Judge model effort (default: low -- fine for rubric scoring; "
+                             "ignored by providers without it).")
     parser.add_argument("--no-routing-judge", action="store_true",
                         help="Skip RS's LLM routing judge -- RS reports N/A instead.")
     parser.add_argument("--no-llm-evals", action="store_true",
@@ -1119,10 +1126,13 @@ def run(args: argparse.Namespace) -> None:
     judge_client = None
     if not (args.no_routing_judge and args.no_llm_evals):
         from atf_eval.llm_evals import get_judge_client
-        judge_client = get_judge_client()
+        judge_client = get_judge_client(args.provider)
         if judge_client is None:
-            print("[info] no ANTHROPIC_API_KEY (checked env + a repo-root .env) -- RS and Group 1-5 "
+            key_env = PROVIDERS[provider_name(args.provider)].api_key_env
+            print(f"[info] no {key_env} (checked env + a repo-root .env) -- RS and Group 1-5 "
                   "LLM metrics will report N/A", file=sys.stderr)
+    judge_model = (args.judge_model or judge_client.default_model) if judge_client else None
+    judge_effort = args.effort if judge_client and judge_client.supports_effort else None
 
     rs_client = None if args.no_routing_judge else judge_client
 
@@ -1147,16 +1157,16 @@ def run(args: argparse.Namespace) -> None:
     runs = discover_runs(goldens, scenarios_dir)
     for run_ in runs:
         run_["metrics"] = score_components(
-            run_["expected"], run_["observed"], rs_client, args.judge_model, args.effort,
+            run_["expected"], run_["observed"], rs_client, judge_model, judge_effort,
             declared=run_["availability"], weights=weights, subweights=subweights,
         )
     annotate_notes(runs)
 
     if not args.no_llm_evals:
         print("[info] running Group 1-5 LLM/multimodal metrics "
-              f"({'judge=' + args.judge_model if judge_client else 'no client -> all N/A'}) ...",
+              f"({f'judge={judge_client.name}:{judge_model}' if judge_client else 'no client -> all N/A'}) ...",
               file=sys.stderr)
-        run_llm_evals(runs, judge_client, args.judge_model, args.effort)
+        run_llm_evals(runs, judge_client, judge_model, judge_effort)
 
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -1169,7 +1179,8 @@ def run(args: argparse.Namespace) -> None:
     from atf_eval.settings import evaluation_settings
 
     settings = evaluation_settings(
-        args.judge_model if rs_client else None, args.effort, weights=weights, subweights=subweights
+        judge_model if rs_client else None, judge_effort, weights=weights, subweights=subweights,
+        judge_provider=rs_client.name if rs_client else None,
     )
     settings_path = output_dir / f"atf_settings_{timestamp}.json"
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")

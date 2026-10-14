@@ -57,8 +57,10 @@ prior ATF dashboard in this project).
    `--scenarios`, `--output-dir` if pointed at a different project's data.
 
    The LLM tracks (RS's routing judge + the Group 1-5 metrics) run by
-   default whenever `ANTHROPIC_API_KEY` is reachable (checked in the actual
-   environment, then a repo-root `.env` fallback) -- no flag needed. Every
+   default whenever the selected provider's key is reachable (checked in the
+   actual environment, then a repo-root `.env` fallback) -- no flag needed.
+   The provider is `--provider` / `ATF_LLM_PROVIDER`: `anthropic` (default,
+   `ANTHROPIC_API_KEY`) or `nvidia` (`NVIDIA_API_KEY`). Every
    judge call is cached on disk (`.llm_cache/`, content-addressed by
    model+prompt), so a repeat run of the same fixtures against the same
    prompts is near-instant and makes zero new API calls; only new/changed
@@ -67,7 +69,8 @@ prior ATF dashboard in this project).
      score is required for RS; routing order is still shown as panel evidence)
    - `--no-llm-evals` -- skip Groups 1-5 entirely (each panel then has no
      "LLM & Multimodal Evaluation" section, and no `atf_llm_metrics_<ts>.csv`)
-   - `--judge-model` (default `claude-opus-5`), `--effort` (default `low`)
+   - `--judge-model` (default: the provider's, `claude-opus-5` /
+     `meta/llama-3.3-70b-instruct`), `--effort` (default `low`; Anthropic only)
 
    Output goes to `results/`:
    - `atf_metrics_<ts>.csv` -- group-level (golden/NTS/STS/TIS/RS/OS/ATF/coverage)

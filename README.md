@@ -30,10 +30,23 @@ the Python API for Policy Compliance and the scorecard.
 Four of five metric groups (NTS, STS, TIS, OS) are fully deterministic — closed-form
 formulas, no LLM calls. **RS is the one exception**: it's an LLM-based semantic judge
 (METRICS.md §5) of whether the agent's routing choice was appropriate given the
-conversation, not a field comparison. Without `ANTHROPIC_API_KEY` set (or with
+conversation, not a field comparison. Without the selected provider's API key set (or with
 `--no-routing-judge`), routing cannot be evaluated, so RS is N/A and excluded from ATF
 (routing order is still reported as a diagnostic) — the rest of the framework needs no
 API key at all.
+
+The LLM judges (RS and the Group 1-5 metrics) support two providers, chosen with
+`--provider` or the `ATF_LLM_PROVIDER` env var:
+
+| Provider | Key env var | Default `--judge-model` |
+|---|---|---|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-opus-5` |
+| `nvidia` (NIM, OpenAI-compatible; `NVIDIA_BASE_URL` overrides the endpoint) | `NVIDIA_API_KEY` | `openai/gpt-oss-20b` |
+
+`--effort` applies only to Anthropic. All provider-specific code lives in
+`src/atf_eval/llm_provider.py`; to add a provider, implement `parse_structured()` there
+and register the class in `PROVIDERS`. Scores from different judge models are not
+directly comparable, so the provider and model are recorded in each run's settings.
 
 ## Integrate your own agent
 

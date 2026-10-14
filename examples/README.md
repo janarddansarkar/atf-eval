@@ -45,8 +45,8 @@ RS scores 1.000 even with `--no-routing-judge` because both turns carry a
 `routing` block that matches exactly — with no judge configured, RS's
 semantic component reports N/A and the formula renormalizes to just the
 order-similarity component, which is a perfect match here. Drop
-`--no-routing-judge` (with `ANTHROPIC_API_KEY` set) to see the real LLM judge
-run instead.
+`--no-routing-judge` (with `ANTHROPIC_API_KEY` set, or `NVIDIA_API_KEY` plus
+`--provider nvidia`) to see the real LLM judge run instead.
 
 If this doesn't reproduce, the framework itself is broken — start
 troubleshooting here before touching a real integration.

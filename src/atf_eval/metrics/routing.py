@@ -32,11 +32,10 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import anthropic
-
 from atf_eval import lcs
 from atf_eval.aggregate import subweights_for, weighted_composite
 from atf_eval.judge import run_routing_judge, verdict_to_score
+from atf_eval.llm_provider import LLMProvider
 from atf_eval.metric_result import MetricResult, make_result
 from atf_eval.metrics.evidence import turn_tool_calls, turn_transitions
 from atf_eval.normalized import NormalizedTurn
@@ -79,8 +78,8 @@ def routing_verdict(
     customer_input: str,
     expected: NormalizedTurn,
     observed: NormalizedTurn,
-    judge_client: anthropic.Anthropic | None,
-    judge_model: str = "claude-opus-5",
+    judge_client: LLMProvider | None,
+    judge_model: str | None = None,
     judge_effort: str | None = None,
 ) -> RoutingVerdict | None:
     """One judge call for one turn. None if there's no client, the turn is
@@ -113,8 +112,8 @@ def semantic_routing_score(
     customer_input: str,
     expected: NormalizedTurn,
     observed: NormalizedTurn,
-    judge_client: anthropic.Anthropic | None,
-    judge_model: str = "claude-opus-5",
+    judge_client: LLMProvider | None,
+    judge_model: str | None = None,
     judge_effort: str | None = None,
 ) -> float | None:
     """Score-only convenience wrapper around routing_verdict()."""

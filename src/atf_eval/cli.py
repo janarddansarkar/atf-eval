@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
-import anthropic
-
 from atf_eval.aggregate import resolve_weights
 from atf_eval.dataset import group_by_conversation, load_dataset
+from atf_eval.llm_provider import DEFAULT_PROVIDER, PROVIDER_ENV, PROVIDERS, get_provider, provider_name
 from atf_eval.loader import load_adapter
 from atf_eval.report import aggregate, render_results_table, write_reports
 from atf_eval.runner import run_evaluation
@@ -35,15 +33,21 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--limit", type=int, default=None, help="Only evaluate the first N conversations")
     run_parser.add_argument("--concurrency", type=int, default=1)
     run_parser.add_argument(
+        "--provider",
+        choices=list(PROVIDERS),
+        default=None,
+        help=f"LLM provider for RS's routing judge (default: ${PROVIDER_ENV}, else {DEFAULT_PROVIDER})",
+    )
+    run_parser.add_argument(
         "--judge-model",
-        default="claude-opus-5",
-        help="Anthropic model for RS's routing judge (METRICS.md §5)",
+        default=None,
+        help="Model for RS's routing judge (METRICS.md §5); default: the provider's default model",
     )
     run_parser.add_argument(
         "--effort",
         choices=["low", "medium", "high", "xhigh", "max"],
         default=None,
-        help="Routing judge model effort (model-dependent)",
+        help="Routing judge model effort (model-dependent; ignored by providers without it)",
     )
     run_parser.add_argument(
         "--no-routing-judge",
@@ -107,14 +111,16 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     judge_client = None
     if not args.no_routing_judge:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            judge_client = anthropic.Anthropic()
-        else:
+        judge_client = get_provider(args.provider)
+        if judge_client is None:
+            key_env = PROVIDERS[provider_name(args.provider)].api_key_env
             print(
-                "[info] ANTHROPIC_API_KEY not set -- RS will report N/A "
+                f"[info] {key_env} not set -- RS will report N/A "
                 "(pass --no-routing-judge to silence this, or set the key to enable it)",
                 file=sys.stderr,
             )
+    judge_model = (args.judge_model or judge_client.default_model) if judge_client else None
+    judge_effort = args.effort if judge_client and judge_client.supports_effort else None
 
     results = run_evaluation(
         conversations,
@@ -124,12 +130,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         tolerance=args.tool_arg_tolerance,
         judge_client=judge_client,
-        judge_model=args.judge_model,
-        judge_effort=args.effort,
+        judge_model=judge_model,
+        judge_effort=judge_effort,
     )
 
     settings = evaluation_settings(
-        args.judge_model if judge_client else None, args.effort, args.tool_arg_tolerance, weights, subweights
+        judge_model, judge_effort, args.tool_arg_tolerance, weights, subweights,
+        judge_provider=judge_client.name if judge_client else None,
     )
     json_path, csv_path = write_reports(results, args.output_dir, settings)
     _print_summary(aggregate(results))

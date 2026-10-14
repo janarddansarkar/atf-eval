@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-import anthropic
 from pydantic import BaseModel
+
+from atf_eval.llm_provider import LLMProvider
 
 
 ROUTING_JUDGE_MAX_TOKENS = 1024
@@ -78,8 +79,8 @@ Judge the agent's routing decision for this turn against the expected path/targe
 
 
 def run_routing_judge(
-    client: anthropic.Anthropic,
-    model: str,
+    client: LLMProvider,
+    model: str | None,
     customer_input: str,
     agent_response: str | None,
     expected_path: str | None,
@@ -91,23 +92,17 @@ def run_routing_judge(
     user_prompt = _build_routing_judge_user_prompt(
         customer_input, agent_response, expected_path, expected_target, trajectory_evidence
     )
-    parse_kwargs = dict(
-        model=model,
-        max_tokens=ROUTING_JUDGE_MAX_TOKENS,
-        system=ROUTING_JUDGE_SYSTEM_PROMPT,
-        output_format=RoutingJudgeScore,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    if effort:
-        parse_kwargs["output_config"] = {"effort": effort}
-
     last_err: Exception | None = None
     for _ in range(max_retries + 1):
         try:
-            response = client.messages.parse(**parse_kwargs)
-            if response.parsed_output is None:
-                raise ValueError("model did not return parseable structured output")
-            return response.parsed_output
+            return client.parse_structured(
+                model=model or client.default_model,
+                system=ROUTING_JUDGE_SYSTEM_PROMPT,
+                user=user_prompt,
+                output_model=RoutingJudgeScore,
+                max_tokens=ROUTING_JUDGE_MAX_TOKENS,
+                effort=effort,
+            )
         except Exception as e:  # noqa: BLE001 - isolate any judge-call failure
             last_err = e
     raise RuntimeError(

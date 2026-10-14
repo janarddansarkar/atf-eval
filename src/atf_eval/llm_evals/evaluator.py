@@ -15,8 +15,6 @@ import statistics
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-import anthropic
-
 from atf_eval.llm_evals.base import (
     NOT_APPLICABLE,
     LLMMetricResult,
@@ -35,6 +33,7 @@ from atf_eval.llm_evals.verdicts import (
     RepetitionVerdict,
     SentimentVerdict,
 )
+from atf_eval.llm_provider import LLMProvider
 
 _SCALE_DESC = {
     ScoringType.ORDINAL_1_5: "integer 1-5",
@@ -156,11 +155,11 @@ def _native_from_verdict(spec: MetricSpec, v: object):
 
 def _judge_one(
     spec: MetricSpec,
-    client: anthropic.Anthropic | None,
+    client: LLMProvider | None,
     level: str,
     system: str,
     user: str,
-    model: str,
+    model: str | None,
     effort: str | None,
     turn_id: int | None,
 ) -> LLMMetricResult:
@@ -237,10 +236,10 @@ def _evidence_present(spec: MetricSpec, ctx: ConversationContext) -> tuple[bool,
 
 def evaluate_conversation(
     ctx: ConversationContext,
-    client: anthropic.Anthropic | None,
+    client: LLMProvider | None,
     *,
     metrics: list[MetricSpec] | None = None,
-    model: str = "claude-opus-5",
+    model: str | None = None,
     effort: str | None = None,
     concurrency: int = 8,
 ) -> ConversationLLMReport:

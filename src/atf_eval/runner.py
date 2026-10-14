@@ -5,12 +5,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-import anthropic
-
 from atf_eval.adapter import TrajectoryAgent
 from atf_eval.aggregate import DEFAULT_SUBWEIGHTS, DEFAULT_WEIGHTS, atf_score
 from atf_eval.availability import resolve_availability
 from atf_eval.dataset import GoldenTurn
+from atf_eval.llm_provider import LLMProvider
 from atf_eval.metric_result import MetricResult
 from atf_eval.metrics import nodes, outcome, routing, state, tools
 from atf_eval.metrics.routing import RoutingVerdict
@@ -116,8 +115,8 @@ def _evaluate_conversation(
     adapter: TrajectoryAgent,
     weights: dict[str, float],
     tolerance: float = 0.0,
-    judge_client: anthropic.Anthropic | None = None,
-    judge_model: str = "claude-opus-5",
+    judge_client: LLMProvider | None = None,
+    judge_model: str | None = None,
     judge_effort: str | None = None,
     subweights: dict[str, dict[str, float]] | None = None,
 ) -> ConversationResult:
@@ -232,8 +231,8 @@ def run_evaluation(
     weights: dict[str, float] | None = None,
     concurrency: int = 1,
     tolerance: float = 0.0,
-    judge_client: anthropic.Anthropic | None = None,
-    judge_model: str = "claude-opus-5",
+    judge_client: LLMProvider | None = None,
+    judge_model: str | None = None,
     judge_effort: str | None = None,
     subweights: dict[str, dict[str, float]] | None = None,
 ) -> list[ConversationResult]:

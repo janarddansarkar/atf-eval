@@ -231,8 +231,11 @@ def test_reports_record_evaluation_settings(tmp_path):
     from atf_eval.report import write_reports
     from atf_eval.settings import evaluation_settings
 
-    json_path, _ = write_reports([], str(tmp_path), evaluation_settings("claude-opus-5", "low", tolerance=0.5))
+    json_path, _ = write_reports(
+        [], str(tmp_path), evaluation_settings("claude-opus-5", "low", tolerance=0.5, judge_provider="anthropic")
+    )
     recorded = json.loads(json_path.read_text())["settings"]
+    assert recorded["routing_judge"]["provider"] == "anthropic"
     assert recorded["routing_judge"]["model"] == "claude-opus-5"
     assert recorded["routing_judge"]["system_prompt_id"].startswith("sha256:")
     assert "0.5" in recorded["argument_matching"]
