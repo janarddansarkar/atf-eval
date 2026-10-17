@@ -2,15 +2,16 @@
   "trace_id": "slow_as_scripted",
   "scenario_id": "slow_as_scripted",
   "golden_scenario": "support_slow_no_outage",
-  "trace_type": "observed",
   "deviation_type": "none",
   "deviation": {
     "description": "Customer follows the golden script."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:06:11Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -23,7 +24,7 @@
       "turn_id": 1,
       "conversation": {
         "customer": "My internet has been really slow lately.",
-        "agent": "Thanks for calling Nimbus Telecom! To help you further, could you please provide your account ID? It's in the format ACC-1234."
+        "agent": "Thanks for calling Nimbus Telecom. Could you please provide your account ID? It's in the format ACC-1234."
       },
       "nodes": [
         {
@@ -38,13 +39,16 @@
       "routing": {
         "path": "ask_account",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 1121
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "Sure, it's ACC-1003.",
-        "agent": "Thanks for your patience. I've opened ticket TCK-1003-OUT regarding the outage, and a human agent will be in touch with you."
+        "agent": "Thank you for your patience. I've opened ticket TCK-1003-OUT regarding the outage, and a human agent will contact you."
       },
       "nodes": [
         {
@@ -185,6 +189,9 @@
       "routing": {
         "path": "escalate",
         "target": "human_agent"
+      },
+      "timing": {
+        "response_latency_ms": 2249
       }
     }
   ],

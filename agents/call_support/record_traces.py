@@ -1,23 +1,20 @@
-"""Run the call-support agent over scripted customer conversations and write one
-observed-trace JSON per conversation (the same shape as agent-eval's observed
-fixtures), ready for `atf-eval dashboard`.
+"""Drive the traced call-support agent through scripted customer conversations.
 
-    python -m agents.call_support.record_traces            # -> agents/call_support/traces/
+    python -m agents.call_support.record_traces
 
-Each scenario names the golden it is meant to follow (`golden_scenario`) and a
-`deviation_type`: "none" for the scripted path, otherwise how the customer
-strays from it. The traces hold what the agent really did, LLM replies included,
-so re-recording can change them; re-record, then re-score.
+The agent saves its own traces as it runs (tracing.py); this script only plays
+the customer. Each scenario names the golden it is meant to follow
+(`golden_scenario`) and a `deviation_type`: "none" for the scripted path,
+otherwise how the customer strays from it. Replies come from the live LLM, so
+re-running can change them.
 """
 from __future__ import annotations
 
 import argparse
-import json
 import time
 from pathlib import Path
 
 from agents.call_support.adapter import CallSupportAdapter
-from agents.call_support.graph import MODEL, build_graph
 from atf_eval.normalized import NormalizedTurn
 
 HERE = Path(__file__).parent
@@ -49,66 +46,25 @@ SCENARIOS = [
 ]
 
 
-def _raw_turn(t: NormalizedTurn) -> dict:
-    seq = 0
-    nodes, flat_tools = [], []
-    for i, n in enumerate(t.nodes, 1):
-        tools = []
-        for c in n.tool_calls:
-            seq += 1
-            call = {"tool_name": c.tool_id, "sequence_index": seq, "input": c.arguments, "output": c.result}
-            tools.append(call)
-            flat_tools.append(call)
-        nodes.append({
-            "node_id": n.node_id,
-            "sequence_index": i,
-            "state_changes": [{"key": c.key, "old": c.old, "new": c.new} for c in n.state_changes],
-            "tool_calls": tools,
-        })
-    return {
-        "turn_id": t.turn_id,
-        "conversation": {"customer": t.customer_input, "agent": t.response},
-        "nodes": nodes,
-        "tool_calls": flat_tools,
-        "state_changes": [{"key": c.key, "old": c.old, "new": c.new} for c in t.state_changes],
-        "routing": {"path": t.routing.path, "target": t.routing.target} if t.routing else None,
-    }
-
-
-def record(name, golden, deviation, description, messages, graph=None) -> dict:
-    adapter = CallSupportAdapter(graph or build_graph())
+def record(name, golden, deviation, description, messages, trace_dir) -> Path:
+    """Run one scripted conversation through the traced agent; return its trace file."""
+    agent = CallSupportAdapter(trace_dir=trace_dir)
+    agent.annotate_trace(name, golden_scenario=golden, deviation_type=deviation,
+                         deviation={"description": description})
     history: list[NormalizedTurn] = []
     for i, msg in enumerate(messages, 1):
-        history.append(adapter.run_turn(name, i, msg, history))
-    last = history[-1].outcome
-    doc = {
-        "trace_id": f"{name}",
-        "scenario_id": name,
-        "golden_scenario": golden,
-        "trace_type": "observed",
-        "deviation_type": deviation,
-        "deviation": {"description": description},
-        "agent": {"framework": "langgraph", "model": MODEL},
-        "availability": {"nodes": "available", "state": "available", "tools": "available",
-                         "routing": "available", "outcome": "available"},
-        "turns": [_raw_turn(t) for t in history],
-    }
-    if last:
-        doc["outcome"] = {"id": last.id, "attributes": last.attributes}
-    return doc
+        history.append(agent.run_turn(name, i, msg, history))
+    return agent.traces.directory / f"{name}.json"
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--out", default=str(HERE / "traces"))
+    p.add_argument("--out", default=None, help="trace directory (default: the agent's own)")
     args = p.parse_args()
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
     for sc in SCENARIOS:
         t0 = time.time()
-        doc = record(*sc)
-        (out / f"{sc[0]}.json").write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
-        print(f"recorded {sc[0]:30s} {len(doc['turns'])} turns  {time.time() - t0:.1f}s")
+        path = record(*sc, trace_dir=args.out)
+        print(f"ran {sc[0]:30s} {len(sc[4])} turns  {time.time() - t0:.1f}s  -> {path}")
 
 
 if __name__ == "__main__":

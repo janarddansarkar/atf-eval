@@ -2,15 +2,16 @@
   "trace_id": "slow_unclear_after_account",
   "scenario_id": "slow_unclear_after_account",
   "golden_scenario": "support_slow_no_outage",
-  "trace_type": "observed",
   "deviation_type": "off_script_clarification",
   "deviation": {
     "description": "After verifying, the customer asks something vague instead of repeating the issue."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:06:19Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -23,7 +24,7 @@
       "turn_id": 1,
       "conversation": {
         "customer": "Hi, ACC-1003 here.",
-        "agent": "Thanks for reaching out to Nimbus Telecom! I'm not quite sure what you need help with yet. Could you tell me what you're calling about?"
+        "agent": "I'd be happy to help! Could you tell me a bit more about what you need assistance with today?"
       },
       "nodes": [
         {
@@ -101,6 +102,9 @@
       "routing": {
         "path": "clarify",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 2143
       }
     },
     {
@@ -128,6 +132,9 @@
       "routing": {
         "path": "clarify",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 2047
       }
     }
   ]

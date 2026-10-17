@@ -2,15 +2,16 @@
   "trace_id": "billing_as_scripted",
   "scenario_id": "billing_as_scripted",
   "golden_scenario": "support_billing_dispute",
-  "trace_type": "observed",
   "deviation_type": "none",
   "deviation": {
     "description": "Customer follows the golden script."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:06:03Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -126,13 +127,16 @@
       "routing": {
         "path": "billing",
         "target": "self_service"
+      },
+      "timing": {
+        "response_latency_ms": 2654
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "That doesn't look right. I want to dispute it with a human.",
-        "agent": "Thanks for your patience. I've opened ticket TCK-1002-BIL regarding your billing question, and a human agent will be in touch with you."
+        "agent": "Thanks for your patience. I've opened ticket TCK-1002-BIL for your billing concern, and a human agent will contact you."
       },
       "nodes": [
         {
@@ -200,6 +204,9 @@
       "routing": {
         "path": "escalate",
         "target": "human_agent"
+      },
+      "timing": {
+        "response_latency_ms": 1947
       }
     }
   ],

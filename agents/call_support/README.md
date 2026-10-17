@@ -18,8 +18,10 @@ START ─▶ classify_intent        (verified)                   └─(none)─
 | `adapter.py` | `CallSupportAdapter`: runs one turn and normalizes the trace for atf-eval |
 | `golden_dataset.jsonl` | 3 conversations / 6 turns of expected behaviour (for live `atf-eval run`) |
 | `golden/*.json` | the same 3 goldens in the canonical trace format (for `atf-eval dashboard`) |
-| `record_traces.py` | runs the agent over 7 scripted conversations and writes the traces |
-| `traces/*.json` | the recorded observed traces |
+| `tracing.py` | trace capture, on whenever the agent runs (below) |
+| `chat.py` | talk to the agent in the terminal; each turn is traced |
+| `record_traces.py` | plays 7 scripted customers against the agent (the agent saves the traces itself) |
+| `traces/` | saved traces: `<conversation>.json` (ATF-ready) and `raw/<conversation>.jsonl` (callback events) |
 
 - **Verification:** if the caller hasn't given an account id (`ACC-1234`), the agent asks for it and remembers what they said; once given, it classifies the *original* complaint.
 - **LLM use:** Claude (`claude-haiku-5-5` by default, `CALL_SUPPORT_MODEL` to change) classifies intent (structured output) and writes replies. With no `ANTHROPIC_API_KEY` it falls back to keyword rules and canned replies, so it still runs offline.
@@ -46,20 +48,31 @@ python -m atf_eval run \
   --output-dir results/            # add --no-routing-judge to skip the RS judge
 ```
 
-## Record traces, then score them
+## Tracing
+
+Tracing is built into `CallSupportAdapter`, so any run of the agent saves its trace:
+
+| Where | What |
+|---|---|
+| `traces/<conversation_id>.json` | ATF-ready trace: nodes, tool calls and state changes per turn, routing, outcome, per-turn latency. Rewritten after every turn. |
+| `traces/raw/<conversation_id>.jsonl` | raw LangChain/LangGraph callback events: node, tool and LLM calls with timestamps, durations, prompts, replies and token usage |
+| LangSmith (optional) | set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` (and `LANGSMITH_PROJECT`); runs are named `call_support/<conversation>/turn<N>` and tagged with the conversation id. Not tested here: no LangSmith key was available. |
+
+Change the folder with `CALL_SUPPORT_TRACE_DIR` or `CallSupportAdapter(trace_dir=...)`; `save_traces=False` turns local saving off.
 
 ```bash
-python -m agents.call_support.record_traces        # runs the live agent -> traces/*.json
+python -m agents.call_support.chat --golden support_outage_resolved   # talk to it; the trace is saved
+python -m agents.call_support.record_traces                          # or replay the 7 scripted customers
 atf-eval dashboard --golden-dir agents/call_support/golden \
   --scenarios agents/call_support/traces --output-dir agents/call_support/results \
-  --no-llm-evals                                    # drop this flag to add the Group 1-5 LLM metrics
+  --no-llm-evals                                                      # drop the flag to add Group 1-5
 ```
 
-Each trace names the golden it follows (`golden_scenario`) and a `deviation_type`. Re-recording calls the LLM again, so replies (and RS) can differ slightly; the committed traces are the ones scored below. The dashboard also scores each golden against itself as a baseline.
+A trace is scored against the golden named by its `golden_scenario` (pass `--golden` to `chat`); without one the dashboard can't tell which golden to use. The dashboard also scores each golden against itself as a baseline.
 
 ## Results
 
-Scored from the recorded traces (RS judged by the default Claude judge; Groups 1-5 not run):
+Scored from the traces the agent saved while running (RS judged by the default Claude judge; Groups 1-5 not run):
 
 | Trace | Golden | Deviation | ATF | NTS | STS | TIS | RS | OS |
 |---|---|---|---|---|---|---|---|---|

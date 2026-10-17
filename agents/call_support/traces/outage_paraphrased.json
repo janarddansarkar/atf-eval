@@ -2,15 +2,16 @@
   "trace_id": "outage_paraphrased",
   "scenario_id": "outage_paraphrased",
   "golden_scenario": "support_outage_resolved",
-  "trace_type": "observed",
   "deviation_type": "paraphrased_input",
   "deviation": {
     "description": "Same journey, different wording (and 'cheers' instead of a thanks)."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:05:58Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -23,7 +24,7 @@
       "turn_id": 1,
       "conversation": {
         "customer": "Wifi's been dropping all day, acc ACC-1001",
-        "agent": "I'm really sorry for the trouble. There's a known fibre cable fault in your area, and it's estimated to be fixed by 6pm today."
+        "agent": "I'm sorry for the trouble. There's a known fibre cable fault in your area, and it's estimated to be fixed by 6pm today."
       },
       "nodes": [
         {
@@ -124,13 +125,16 @@
       "routing": {
         "path": "outage",
         "target": "self_service"
+      },
+      "timing": {
+        "response_latency_ms": 2786
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "Nope, nothing else. Cheers!",
-        "agent": "Thanks so much for calling Nimbus Telecom, and have a wonderful day!"
+        "agent": "Thank you for calling Nimbus Telecom, and have a wonderful day! Goodbye."
       },
       "nodes": [
         {
@@ -174,6 +178,9 @@
       "routing": {
         "path": "close",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 2127
       }
     }
   ],

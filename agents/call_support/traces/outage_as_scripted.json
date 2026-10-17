@@ -2,15 +2,16 @@
   "trace_id": "outage_as_scripted",
   "scenario_id": "outage_as_scripted",
   "golden_scenario": "support_outage_resolved",
-  "trace_type": "observed",
   "deviation_type": "none",
   "deviation": {
     "description": "Customer follows the golden script."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:05:53Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -23,7 +24,7 @@
       "turn_id": 1,
       "conversation": {
         "customer": "Hi, my internet is down. My account is ACC-1001.",
-        "agent": "I'm really sorry for the trouble. There's a known fibre cable fault in your area, and it's estimated to be fixed by 6pm today."
+        "agent": "I'm really sorry for the trouble. There's a known fibre cable fault in your area, and we estimate it will be fixed by 6pm today."
       },
       "nodes": [
         {
@@ -124,13 +125,16 @@
       "routing": {
         "path": "outage",
         "target": "self_service"
+      },
+      "timing": {
+        "response_latency_ms": 2274
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "Okay thanks, that's all I needed.",
-        "agent": "Thank you for calling Nimbus Telecom, and have a great day!"
+        "agent": "Thanks so much for calling Nimbus Telecom, and have a wonderful day! Goodbye."
       },
       "nodes": [
         {
@@ -174,6 +178,9 @@
       "routing": {
         "path": "close",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 1992
       }
     }
   ],

@@ -2,15 +2,16 @@
   "trace_id": "billing_accepts_explanation",
   "scenario_id": "billing_accepts_explanation",
   "golden_scenario": "support_billing_dispute",
-  "trace_type": "observed",
   "deviation_type": "customer_accepts_instead_of_disputing",
   "deviation": {
     "description": "Customer is satisfied with the explanation, so no ticket is raised (outcome differs from the golden)."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:06:07Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -126,6 +127,9 @@
       "routing": {
         "path": "billing",
         "target": "self_service"
+      },
+      "timing": {
+        "response_latency_ms": 2470
       }
     },
     {
@@ -176,6 +180,9 @@
       "routing": {
         "path": "close",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 2333
       }
     }
   ],

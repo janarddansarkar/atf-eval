@@ -64,6 +64,7 @@ def test_no_api_key_means_no_provider():
 
 
 def test_each_provider_is_built_from_its_own_key(monkeypatch):
+    pytest.importorskip("openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
     assert isinstance(get_provider("anthropic"), AnthropicProvider)

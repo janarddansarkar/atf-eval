@@ -2,15 +2,16 @@
   "trace_id": "slow_wrong_account_first",
   "scenario_id": "slow_wrong_account_first",
   "golden_scenario": "support_slow_no_outage",
-  "trace_type": "observed",
   "deviation_type": "extra_turn_wrong_account",
   "deviation": {
     "description": "Customer first gives an unknown account id, so the agent must ask again (3 turns vs the golden's 2)."
   },
+  "trace_type": "observed",
   "agent": {
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
+  "recorded_at": "2026-10-17T08:06:14Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -23,7 +24,7 @@
       "turn_id": 1,
       "conversation": {
         "customer": "My internet has been really slow lately.",
-        "agent": "Thanks for calling Nimbus Telecom! To look up your account, could you please share your account ID? It's in the format ACC-1234."
+        "agent": "I'd be happy to help. Could you please provide your account ID? It's in the format ACC-1234."
       },
       "nodes": [
         {
@@ -38,6 +39,9 @@
       "routing": {
         "path": "ask_account",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 1125
       }
     },
     {
@@ -77,13 +81,16 @@
       "routing": {
         "path": "ask_account",
         "target": "customer"
+      },
+      "timing": {
+        "response_latency_ms": 1124
       }
     },
     {
       "turn_id": 3,
       "conversation": {
         "customer": "Sorry, ACC-1003.",
-        "agent": "Thank you for your patience. I've opened ticket TCK-1003-OUT regarding the outage, and a human agent will contact you."
+        "agent": "Thanks for your patience. I've opened ticket TCK-1003-OUT about the outage, and a human agent will be in touch with you soon."
       },
       "nodes": [
         {
@@ -224,6 +231,9 @@
       "routing": {
         "path": "escalate",
         "target": "human_agent"
+      },
+      "timing": {
+        "response_latency_ms": 1843
       }
     }
   ],
