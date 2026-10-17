@@ -50,7 +50,3 @@ order-similarity component, which is a perfect match here. Drop
 
 If this doesn't reproduce, the framework itself is broken — start
 troubleshooting here before touching a real integration.
-
-## Example agents
-
-See [`agents/`](../agents/) for three small agents (Kestrel, Marlow, Sage) that run against this dataset.
