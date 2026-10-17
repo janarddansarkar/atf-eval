@@ -51,16 +51,6 @@ order-similarity component, which is a perfect match here. Drop
 If this doesn't reproduce, the framework itself is broken — start
 troubleshooting here before touching a real integration.
 
-## A minimal real agent
+## Example agents
 
-`simple_agent.py` is a ~70-line rule-based agent (keyword intent → node, tool,
-state change, routing, then a confirm turn). Unlike the mock it makes its own
-decisions, so it is the template for wiring a real agent:
-
-```bash
-python -m atf_eval run \
-  --dataset examples/golden_dataset.jsonl \
-  --adapter examples.simple_agent:SimpleAgent \
-  --output-dir results/ \
-  --no-routing-judge
-```
+See [`agents/`](../agents/) for three small agents (Kestrel, Marlow, Sage) that run against this dataset.
