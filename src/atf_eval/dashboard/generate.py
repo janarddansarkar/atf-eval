@@ -735,7 +735,7 @@ def render_panel(idx: int, run: dict) -> str:
     m = run["metrics"]
     atf_band = band(m["atf"])
     chips = f'<span class="chip">{run["turns_compared"]}</span>'
-    if run["deviation_type"] != "none":
+    if run["deviation_type"] not in ("none", "agent_run"):
         chips += f'<span class="chip">deviation: {run["deviation_type"]}</span>'
         primary = primary_metric_for(run["deviation_type"])
         if primary:
@@ -1155,6 +1155,41 @@ def run(args: argparse.Namespace) -> None:
             "Pass --scenarios, or run from a directory that has a ./tests/fixtures/scenarios folder."
         )
     runs = discover_runs(goldens, scenarios_dir)
+    golden_summary = ", ".join(f"{g['key']} ({g['path'].name})" for g in goldens)
+    build_outputs(
+        runs,
+        golden_summary=golden_summary,
+        source_label=scenarios_dir,
+        output_dir=output_dir,
+        judge_client=judge_client,
+        rs_client=rs_client,
+        judge_model=judge_model,
+        judge_effort=judge_effort,
+        weights=weights,
+        subweights=subweights,
+        llm_evals=not args.no_llm_evals,
+    )
+
+
+def build_outputs(
+    runs: list[dict],
+    *,
+    golden_summary: str,
+    source_label,
+    output_dir: Path,
+    judge_client,
+    rs_client,
+    judge_model: str | None,
+    judge_effort: str | None,
+    weights: dict,
+    subweights: dict,
+    llm_evals: bool = True,
+) -> dict:
+    """Score `runs` (as built by discover_runs(), or by the evaluation API) and
+    write the dashboard, CSVs and settings to `output_dir`. Shared by the
+    `atf-eval dashboard` CLI and the API server, so both produce the same
+    artefacts. Returns {"runs", "settings", "paths": {name: Path}}."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     for run_ in runs:
         run_["metrics"] = score_components(
             run_["expected"], run_["observed"], rs_client, judge_model, judge_effort,
@@ -1162,7 +1197,7 @@ def run(args: argparse.Namespace) -> None:
         )
     annotate_notes(runs)
 
-    if not args.no_llm_evals:
+    if llm_evals:
         print("[info] running Group 1-5 LLM/multimodal metrics "
               f"({f'judge={judge_client.name}:{judge_model}' if judge_client else 'no client -> all N/A'}) ...",
               file=sys.stderr)
@@ -1172,7 +1207,6 @@ def run(args: argparse.Namespace) -> None:
     run_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
     group_csv, component_csv = write_csvs(runs, output_dir, timestamp)
-    golden_summary = ", ".join(f"{g['key']} ({g['path'].name})" for g in goldens)
     # Single dashboard: render_dashboard()/render_panel() embed each run's LLM
     # Groups 1-5 results (if any) directly into that run's own panel, so
     # there is exactly one HTML file to publish, not a deterministic/LLM pair.
@@ -1184,19 +1218,19 @@ def run(args: argparse.Namespace) -> None:
     )
     settings_path = output_dir / f"atf_settings_{timestamp}.json"
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    dashboard_html = render_dashboard(runs, golden_summary, scenarios_dir, run_date, settings)
+    dashboard_html = render_dashboard(runs, golden_summary, Path(str(source_label)), run_date, settings)
     dashboard_path = output_dir / f"atf_dashboard_{timestamp}.html"
     dashboard_path.write_text(dashboard_html, encoding="utf-8")
 
-    print("Wrote:")
-    print(f"  {group_csv}")
-    print(f"  {component_csv}")
-    print(f"  {dashboard_path}")
-    print(f"  {settings_path}")
-
+    paths = {"metrics_csv": group_csv, "components_csv": component_csv,
+             "dashboard": dashboard_path, "settings": settings_path}
     llm_csv = write_llm_csv(runs, output_dir, timestamp)
     if llm_csv is not None:
-        print(f"  {llm_csv}")
+        paths["llm_csv"] = llm_csv
+
+    print("Wrote:")
+    for path in paths.values():
+        print(f"  {path}")
 
     for run_ in runs:
         m = run_["metrics"]
@@ -1209,6 +1243,7 @@ def run(args: argparse.Namespace) -> None:
             print(f"    LLM: {avail} metric-results scored, "
                   f"{sum(1 for r in report.overall_results.values() if r.status == 'available')}/"
                   f"{len(report.overall_results)} overall metrics")
+    return {"runs": runs, "settings": settings, "paths": paths}
 
 
 def main() -> None:

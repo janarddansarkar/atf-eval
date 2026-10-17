@@ -49,6 +49,50 @@ The NVIDIA provider needs the optional `openai` package: `pip install -e ".[nvid
 and register the class in `PROVIDERS`. Scores from different judge models are not
 directly comparable, so the provider and model are recorded in each run's settings.
 
+## atf-eval as an API
+
+atf-eval can run as a service, so any agent — in any repo, any framework — can be evaluated by
+writing only an adapter:
+
+```
+ your agent repo                                   atf-eval server (FastAPI)
+┌─────────────────────────────┐   observed       ┌──────────────────────────────┐
+│ adapter.py  (run_turn →     │   trajectories   │ scores NTS/STS/TIS/RS/OS/ATF │
+│ NormalizedTurn)             │ ───────────────▶ │ + Group 1-5 LLM metrics      │
+│ atf-eval submit ...         │ ◀─────────────── │ dashboard + CSVs + JSON      │
+└─────────────────────────────┘   results        └──────────────────────────────┘
+```
+
+The server never calls or imports your agent, and judge API keys stay on the server.
+
+```bash
+pip install -e ".[server]"                 # on the server machine
+atf-eval serve --port 8000                 # needs ANTHROPIC_API_KEY (env or .env) for RS / Group 1-5
+
+pip install -e ".[client]"                 # on the agent side
+atf-eval submit --server http://localhost:8000 \
+  --adapter my_adapter:MyAgentAdapter --dataset golden_dataset.jsonl --output-dir results/
+```
+
+`submit` runs your adapter over the dataset's customer inputs, posts the observed trajectories, waits for the
+evaluation, prints the per-conversation scores and saves the dashboard, CSVs and `result.json`. Useful flags:
+`--no-routing-judge`, `--no-llm-evals`, `--judge-model`, `--provider`, `--weights-file`, `--upload-golden`
+(store the golden on the server and reference it by id), `--concurrency`, `--limit`. From Python:
+`AtfClient(url).evaluate(adapter, "golden_dataset.jsonl", out_dir="results")`.
+
+| Endpoint | |
+|---|---|
+| `GET /health` | liveness |
+| `POST /v1/goldens`, `GET /v1/goldens[/{id}]` | store / list / fetch golden datasets |
+| `POST /v1/evaluations` | submit `{golden_id` or `golden_turns, observed, availability, options}` → `202 {evaluation_id}` |
+| `GET /v1/evaluations/{id}` | `queued` / `running` / `done` / `failed`; once done, scores per conversation (all components, diagnostics, LLM metrics) |
+| `GET /v1/evaluations/{id}/dashboard` | the HTML dashboard |
+| `GET /v1/evaluations/{id}/files/{name}` | metrics / components / LLM CSVs, settings JSON |
+
+Interactive docs are at `/docs`. Data (goldens, evaluations) is stored under `$ATF_SERVER_DATA` (default
+`./atf_server_data`). There is no authentication: run it on localhost or behind your own gateway. A full example
+(a standalone LangGraph agent plus its adapter) is in `agents/call_support/`.
+
 ## Integrate your own agent
 
 Implement the `TrajectoryAgent` protocol from `atf_eval.adapter`:

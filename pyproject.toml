@@ -9,8 +9,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.29"]  # atf-eval serve
+client = ["httpx>=0.27"]  # atf-eval submit
 nvidia = ["openai>=1.0"]  # NVIDIA NIM's OpenAI-compatible API
-dev = ["pytest>=8.0", "jsonschema>=4.0", "openai>=1.0"]
+dev = ["pytest>=8.0", "jsonschema>=4.0", "openai>=1.0", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 
 [project.scripts]
 atf-eval = "atf_eval.cli:main"

@@ -37,16 +37,29 @@ python -m atf_eval run \
 
 ## Run the evaluation
 
+The evaluation is done by the atf-eval API server; this folder is all the agent side needs
+(`adapter.py` + a golden dataset).
+
 ```bash
-pip install -e .                      # atf-eval, from the repo root
-pip install -e call_support_agent     # the agent
+# terminal 1: the atf-eval server (needs ANTHROPIC_API_KEY in its env or .env for RS / Group 1-5)
+pip install -e ".[server]" && atf-eval serve --port 8000
+
+# terminal 2: the agent side
+pip install -e ".[client]" -e call_support_agent
+atf-eval submit --server http://localhost:8000 \
+  --adapter agents.call_support.adapter:CallSupportAdapter \
+  --dataset agents/call_support/golden_dataset.jsonl --output-dir results/
+```
+
+That runs the agent live over the dataset's customer inputs, submits what it did, and downloads the
+dashboard, CSVs and `result.json`. Add `--no-llm-evals` to skip the Group 1-5 metrics, or
+`--judge-model claude-haiku-5-5` for a cheaper judge. Without a server, `atf-eval run` scores locally,
+and `atf-eval dashboard` scores saved traces:
+
+```bash
 python -m agents.call_support.record_traces        # plays the scripted customers; the agent traces itself
 atf-eval dashboard --golden-dir agents/call_support/golden \
-  --scenarios agents/call_support/traces --output-dir agents/call_support/results \
-  --no-llm-evals                                    # drop the flag to add Group 1-5
-# or score it live, without saved traces:
-atf-eval run --dataset agents/call_support/golden_dataset.jsonl \
-  --adapter agents.call_support.adapter:CallSupportAdapter
+  --scenarios agents/call_support/traces --output-dir agents/call_support/results --no-llm-evals
 ```
 
 Tracing itself (what is saved, LangSmith) is described in the agent's README. Running through the adapter saves traces too, to `$CALL_SUPPORT_TRACE_DIR` or `./traces`.
