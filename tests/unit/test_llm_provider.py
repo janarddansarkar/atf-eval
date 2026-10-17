@@ -88,6 +88,16 @@ def test_dotenv_fills_provider_and_key_but_never_overrides_exported(monkeypatch,
     assert "UNRELATED" not in os.environ
 
 
+def test_dotenv_also_fills_server_and_endpoint_settings(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("ATF_SERVER=http://example:9000\nNVIDIA_BASE_URL=http://nim:8000/v1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    for name in ("ATF_SERVER", "NVIDIA_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    load_dotenv()
+    assert os.environ["ATF_SERVER"] == "http://example:9000"
+    assert os.environ["NVIDIA_BASE_URL"] == "http://nim:8000/v1"
+
+
 def test_extract_json_strips_reasoning_and_fences():
     text = '<think>{"not": "this"}</think>Sure:\n```json\n{"verdict": "correct", "reasoning": "ok"}\n```'
     assert _extract_json(text) == '{"verdict": "correct", "reasoning": "ok"}'

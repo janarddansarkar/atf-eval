@@ -8,6 +8,20 @@ calls, routing decisions, final outcome) matches an expected trajectory defined 
 golden dataset. See `METRICS.md` for the frozen scoring specification this package
 implements (it lives in the separate `agent-eval` repo, checked out here as `agent-eval/`).
 
+## Configuration (API keys)
+
+All settings live in a `.env` (git-ignored). Copy the template and fill in what you need:
+
+```bash
+cp .env.example .env      # then edit: ANTHROPIC_API_KEY=sk-ant-...
+```
+
+atf-eval reads `.env` from the current directory (falling back to the repo root); a variable already
+exported in your shell wins. Only the LLM judges need a key — the deterministic metrics run without one.
+`.env.example` documents every variable: `ATF_LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`,
+`NVIDIA_BASE_URL`, `ATF_SERVER`, `ATF_SERVER_DATA`, `ATF_LLM_CACHE`, `ATF_LLM_CACHE_DIR`. In API mode the judge keys
+go in the **server's** `.env`; the agent side needs none.
+
 ## Ways to run it
 
 | | Command | Use when |

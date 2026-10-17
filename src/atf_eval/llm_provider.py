@@ -31,6 +31,17 @@ T = TypeVar("T", bound=BaseModel)
 PROVIDER_ENV = "ATF_LLM_PROVIDER"
 DEFAULT_PROVIDER = "anthropic"
 
+# Every setting atf-eval reads from the environment; any of them may be put in a
+# `.env` (see .env.example). Provider API keys are added from PROVIDERS below.
+SETTINGS_ENV = (
+    PROVIDER_ENV,
+    "NVIDIA_BASE_URL",  # self-hosted NIM endpoint
+    "ATF_SERVER",  # URL `atf-eval submit` talks to
+    "ATF_SERVER_DATA",  # where `atf-eval serve` stores goldens/evaluations
+    "ATF_LLM_CACHE",  # on | off
+    "ATF_LLM_CACHE_DIR",
+)
+
 
 class LLMProvider(Protocol):
     name: ClassVar[str]
@@ -169,10 +180,10 @@ def _dotenv_candidates() -> list[Path]:
 
 
 def load_dotenv() -> None:
-    """Fill the provider selector and every provider's API key from a `.env`
-    when not already exported (dev convenience -- the deterministic pipeline
-    never needs a key). An exported variable always wins."""
-    names = {PROVIDER_ENV} | {p.api_key_env for p in PROVIDERS.values()}
+    """Fill every atf-eval setting (SETTINGS_ENV) and each provider's API key
+    from a `.env` when not already exported (the deterministic pipeline never
+    needs a key). An exported variable always wins."""
+    names = set(SETTINGS_ENV) | {p.api_key_env for p in PROVIDERS.values()}
     for env_path in _dotenv_candidates():
         if not env_path.exists():
             continue

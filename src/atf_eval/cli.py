@@ -7,7 +7,9 @@ from pathlib import Path
 
 from atf_eval.aggregate import resolve_weights
 from atf_eval.dataset import group_by_conversation, load_dataset
-from atf_eval.llm_provider import DEFAULT_PROVIDER, PROVIDER_ENV, PROVIDERS, get_provider, provider_name
+from atf_eval.llm_provider import (
+    DEFAULT_PROVIDER, PROVIDER_ENV, PROVIDERS, get_provider, load_dotenv, provider_name,
+)
 from atf_eval.loader import load_adapter
 from atf_eval.report import aggregate, render_results_table, write_reports
 from atf_eval.runner import run_evaluation
@@ -184,6 +186,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    load_dotenv()
     try:
         import uvicorn
 
@@ -196,6 +199,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_submit(args: argparse.Namespace) -> int:
+    load_dotenv()
     from atf_eval.client import AtfApiError, AtfClient, collect
 
     if not args.dataset:

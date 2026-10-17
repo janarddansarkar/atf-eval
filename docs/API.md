@@ -24,7 +24,7 @@ Design choices:
 - **The server never calls or imports the agent.** The agent side runs the agent (so private code, data and
   credentials stay there) and submits the trajectory it produced. Any language that can POST JSON can use the
   API; `atf-eval submit` / `AtfClient` are the Python convenience layer.
-- **Judge API keys live on the server** (`ANTHROPIC_API_KEY` / `NVIDIA_API_KEY` in its environment or `.env`).
+- **Judge API keys live on the server** (`ANTHROPIC_API_KEY` / `NVIDIA_API_KEY` in its environment or in a `.env` in the directory it is started from; see `.env.example`).
   They are never part of a request.
 - **Same scoring code as the CLI.** The server calls the pipeline behind `atf-eval dashboard`
   (`dashboard.generate.build_outputs`), so API and CLI results agree.
