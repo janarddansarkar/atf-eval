@@ -9,6 +9,14 @@ golden dataset. See `METRICS.md` for the frozen scoring specification this packa
 implements (supersedes `ATF_Metric_Definition_Evaluation_Specification.md`, the
 original draft spec).
 
+## Ways to run it
+
+| | Command | Use when |
+|---|---|---|
+| **Local run** | `atf-eval run --dataset … --adapter module:Class` | you want scores for an agent in one process (no server) |
+| **Dashboard on saved traces** | `atf-eval dashboard --golden-dir … --scenarios …` | you already have golden + observed trace JSON files |
+| **API** | `atf-eval serve`, then `atf-eval submit --adapter …` | the agent lives elsewhere; the agent owner writes only an adapter ([docs/API.md](docs/API.md)) |
+
 ## Quickstart
 
 ```bash
@@ -21,6 +29,21 @@ atf-eval run --dataset golden_dataset.jsonl --adapter adapter:MyAgentAdapter --n
 `atf-eval init` generates a starter adapter + a matching golden dataset that runs with
 `ATF score: 1.000` immediately — confirms the framework works before you touch anything.
 Then edit `adapter.py` and `golden_dataset.jsonl` to point at your real agent.
+
+Optional extras: `[server]` (FastAPI + uvicorn, for `atf-eval serve`), `[client]` (httpx, for
+`atf-eval submit`), `[nvidia]` (the NVIDIA NIM judge provider), `[dev]` (tests + all of the above).
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `src/atf_eval/` | the framework: metrics (`metrics/`), LLM metrics (`llm_evals/`), judge providers (`llm_provider.py`), CLI, dashboard generator, API server (`api/`) and client (`client.py`) |
+| `agent-eval/` | the frozen spec (`METRICS.md`), golden scenarios and observed-scenario fixtures for the motor-insurance example |
+| `examples/` | a dependency-free mock agent + tiny golden dataset (framework smoke test) |
+| `call_support_agent/` | a **standalone** LangGraph + LangChain call-support agent with built-in tracing; no `atf_eval` dependency |
+| `agents/call_support/` | how that agent is evaluated: adapter, goldens, scripted scenarios, recorded traces |
+| `docs/API.md` | the HTTP API reference |
+| `tests/` | unit tests (`pytest`) |
 
 **For step-by-step setup and run instructions (install, API keys, the `atf-eval
 dashboard` command), see `HOW_TO_USE.md`.** This README is the API/conceptual
@@ -51,47 +74,22 @@ directly comparable, so the provider and model are recorded in each run's settin
 
 ## atf-eval as an API
 
-atf-eval can run as a service, so any agent — in any repo, any framework — can be evaluated by
-writing only an adapter:
-
-```
- your agent repo                                   atf-eval server (FastAPI)
-┌─────────────────────────────┐   observed       ┌──────────────────────────────┐
-│ adapter.py  (run_turn →     │   trajectories   │ scores NTS/STS/TIS/RS/OS/ATF │
-│ NormalizedTurn)             │ ───────────────▶ │ + Group 1-5 LLM metrics      │
-│ atf-eval submit ...         │ ◀─────────────── │ dashboard + CSVs + JSON      │
-└─────────────────────────────┘   results        └──────────────────────────────┘
-```
-
-The server never calls or imports your agent, and judge API keys stay on the server.
+atf-eval can run as a FastAPI service so any agent, in any repo or framework, is evaluated by writing only an
+adapter. The agent side runs the agent and submits what it did; the server scores it (all five deterministic
+metrics, the LLM routing judge, the Group 1-5 LLM metrics) and serves the dashboard and CSVs. The server never
+calls your agent, and judge API keys stay on the server.
 
 ```bash
-pip install -e ".[server]"                 # on the server machine
-atf-eval serve --port 8000                 # needs ANTHROPIC_API_KEY (env or .env) for RS / Group 1-5
+pip install -e ".[server]" && atf-eval serve --port 8000          # server (ANTHROPIC_API_KEY in its env or .env)
 
-pip install -e ".[client]"                 # on the agent side
+pip install -e ".[client]"                                          # agent side
 atf-eval submit --server http://localhost:8000 \
   --adapter my_adapter:MyAgentAdapter --dataset golden_dataset.jsonl --output-dir results/
 ```
 
-`submit` runs your adapter over the dataset's customer inputs, posts the observed trajectories, waits for the
-evaluation, prints the per-conversation scores and saves the dashboard, CSVs and `result.json`. Useful flags:
-`--no-routing-judge`, `--no-llm-evals`, `--judge-model`, `--provider`, `--weights-file`, `--upload-golden`
-(store the golden on the server and reference it by id), `--concurrency`, `--limit`. From Python:
-`AtfClient(url).evaluate(adapter, "golden_dataset.jsonl", out_dir="results")`.
-
-| Endpoint | |
-|---|---|
-| `GET /health` | liveness |
-| `POST /v1/goldens`, `GET /v1/goldens[/{id}]` | store / list / fetch golden datasets |
-| `POST /v1/evaluations` | submit `{golden_id` or `golden_turns, observed, availability, options}` → `202 {evaluation_id}` |
-| `GET /v1/evaluations/{id}` | `queued` / `running` / `done` / `failed`; once done, scores per conversation (all components, diagnostics, LLM metrics) |
-| `GET /v1/evaluations/{id}/dashboard` | the HTML dashboard |
-| `GET /v1/evaluations/{id}/files/{name}` | metrics / components / LLM CSVs, settings JSON |
-
-Interactive docs are at `/docs`. Data (goldens, evaluations) is stored under `$ATF_SERVER_DATA` (default
-`./atf_server_data`). There is no authentication: run it on localhost or behind your own gateway. A full example
-(a standalone LangGraph agent plus its adapter) is in `agents/call_support/`.
+Full reference — architecture, every flag and endpoint, request/response schemas, `AtfClient` — is in
+[`docs/API.md`](docs/API.md). A complete worked example (standalone agent + adapter) is in
+[`agents/call_support/`](agents/call_support/README.md).
 
 ## Integrate your own agent
 
@@ -289,8 +287,8 @@ Not invoked
 
 ## CLI flags and worked examples
 
-Full flag reference and copy-pasteable commands (`atf-eval run`, `atf-eval dashboard`)
-live in `HOW_TO_USE.md` — not duplicated here to avoid the two docs drifting out of sync.
+Full flag reference and copy-pasteable commands (`atf-eval run`, `atf-eval dashboard`, `atf-eval serve`,
+`atf-eval submit`) live in `HOW_TO_USE.md` and `docs/API.md` — not duplicated here to avoid the two docs drifting out of sync.
 
 ## Design notes
 

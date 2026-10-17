@@ -1,15 +1,15 @@
-# Call-support agent (LangGraph)
+# Evaluating the call-support agent
 
-A phone-support agent for a fictional telecom ("Nimbus Telecom"), built with **LangGraph** + **LangChain** (`langchain-anthropic`, `@tool` tools), wrapped as an `atf_eval` `TrajectoryAgent` and scored with `atf-eval`.
+How the standalone [call-support agent](../../call_support_agent/README.md) (LangGraph + LangChain, fictional telecom "Nimbus Telecom") is evaluated with atf-eval. This folder is everything the **agent side** needs: an adapter, golden data and a scenario runner. The evaluation itself is done by the atf-eval API server ([docs/API.md](../../docs/API.md)).
 
-## The agent
+## Files
 
-The agent is its own project in [`../../call_support_agent/`](../../call_support_agent/) (LangGraph + LangChain, built-in tracing, no `atf_eval` dependency). This folder is only its evaluation:
+The agent is its own project in [`../../call_support_agent/`](../../call_support_agent/) (built-in tracing, no `atf_eval` dependency). Here:
 
 | File | Role |
 |---|---|
 | `adapter.py` | the only bridge: calls `CallSupportAgent.chat()` and converts the result to a `NormalizedTurn` |
-| `golden_dataset.jsonl` | 3 conversations / 6 turns of expected behaviour (for live `atf-eval run`) |
+| `golden_dataset.jsonl` | 3 conversations / 6 turns: the customer inputs to drive the agent with and the expected trajectory (for `atf-eval submit` / `run`) |
 | `golden/*.json` | the same 3 goldens in the canonical trace format (for `atf-eval dashboard`) |
 | `record_traces.py` | plays 7 scripted customers against the agent; the agent saves the traces itself |
 | `traces/` | the traces it saved: `<conversation>.json` and `raw/<conversation>.jsonl` |
@@ -25,20 +25,9 @@ The agent is its own project in [`../../call_support_agent/`](../../call_support
 | outcome | `escalate_node` → `ticket_created`; `close_node` → `issue_resolved` (attribute `category`) |
 | response | the agent's reply, which RS's LLM judge reads |
 
-## Run it
-
-```bash
-pip install -r agents/call_support/requirements.txt   # plus: pip install -e .
-python -m atf_eval run \
-  --dataset agents/call_support/golden_dataset.jsonl \
-  --adapter agents.call_support.adapter:CallSupportAdapter \
-  --output-dir results/            # add --no-routing-judge to skip the RS judge
-```
-
 ## Run the evaluation
 
-The evaluation is done by the atf-eval API server; this folder is all the agent side needs
-(`adapter.py` + a golden dataset).
+**Through the API** (the intended setup):
 
 ```bash
 # terminal 1: the atf-eval server (needs ANTHROPIC_API_KEY in its env or .env for RS / Group 1-5)
@@ -53,8 +42,7 @@ atf-eval submit --server http://localhost:8000 \
 
 That runs the agent live over the dataset's customer inputs, submits what it did, and downloads the
 dashboard, CSVs and `result.json`. Add `--no-llm-evals` to skip the Group 1-5 metrics, or
-`--judge-model claude-haiku-5-5` for a cheaper judge. Without a server, `atf-eval run` scores locally,
-and `atf-eval dashboard` scores saved traces:
+`--judge-model claude-haiku-5-5` for a cheaper judge. **Without a server**, `atf-eval run` scores in-process (`atf-eval run --dataset agents/call_support/golden_dataset.jsonl --adapter agents.call_support.adapter:CallSupportAdapter`), and `atf-eval dashboard` scores traces the agent already saved:
 
 ```bash
 python -m agents.call_support.record_traces        # plays the scripted customers; the agent traces itself
@@ -68,7 +56,7 @@ A trace is scored against the golden named by its `golden_scenario` (`call-suppo
 
 ## Results
 
-Scored from the traces the agent saved while running (RS judged by the default Claude judge; Groups 1-5 not run):
+Scored with `atf-eval dashboard` from the traces the agent saved while running (RS judged by the default Claude judge; Groups 1-5 not run). Through the API, the three golden conversations also scored ATF 1.000 with a Haiku judge, and the Group 1-5 metrics added a signal the deterministic ones miss (e.g. `correctness: FAIL` on the no-outage conversation):
 
 | Trace | Golden | Deviation | ATF | NTS | STS | TIS | RS | OS |
 |---|---|---|---|---|---|---|---|---|

@@ -28,3 +28,6 @@ results/
 # OS
 .DS_Store
 .llm_cache/
+
+# atf-eval API server data
+atf_server_data/

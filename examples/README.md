@@ -50,3 +50,10 @@ order-similarity component, which is a perfect match here. Drop
 
 If this doesn't reproduce, the framework itself is broken — start
 troubleshooting here before touching a real integration.
+
+## Next: a real agent
+
+This mock is only a framework smoke test. For a real agent (LangGraph + LangChain, with tracing, evaluated through
+the atf-eval API) see [`../agents/call_support/`](../agents/call_support/README.md) and the standalone agent in
+[`../call_support_agent/`](../call_support_agent/README.md).
+
