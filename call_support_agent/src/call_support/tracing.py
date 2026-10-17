@@ -2,10 +2,10 @@
 
 Two local artefacts per conversation, both written as the agent runs:
 
-  <trace_dir>/<conversation_id>.json        ATF-ready observed trace (the shape of
-                                            agent-eval's observed fixtures), rewritten
-                                            after every turn. `atf-eval dashboard
-                                            --scenarios <trace_dir>` scores it directly.
+  <trace_dir>/<conversation_id>.json        the conversation's turns (nodes, tool calls,
+                                            state changes, routing, outcome, latency),
+                                            rewritten after every turn. A plain JSON file
+                                            any evaluation tool can read.
   <trace_dir>/raw/<conversation_id>.jsonl   raw LangChain/LangGraph callback events:
                                             node, tool and LLM calls with timestamps,
                                             prompts, replies and token usage.
@@ -25,16 +25,16 @@ from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
 
-from atf_eval.normalized import NormalizedTurn
+from call_support.types import TurnResult
 
-DEFAULT_TRACE_DIR = Path(__file__).parent / "traces"
+
 AVAILABILITY = {"nodes": "available", "state": "available", "tools": "available",
                 "routing": "available", "outcome": "available"}
 
 
 def resolve_trace_dir(trace_dir: str | Path | None = None) -> Path:
-    """Explicit argument, else $CALL_SUPPORT_TRACE_DIR, else agents/call_support/traces."""
-    return Path(trace_dir or os.environ.get("CALL_SUPPORT_TRACE_DIR") or DEFAULT_TRACE_DIR)
+    """Explicit argument, else $CALL_SUPPORT_TRACE_DIR, else ./traces."""
+    return Path(trace_dir or os.environ.get("CALL_SUPPORT_TRACE_DIR") or "traces")
 
 
 def _clip(value: Any, limit: int = 2000) -> Any:
@@ -100,30 +100,27 @@ class RawEventHandler(BaseCallbackHandler):
         self._emit("llm_error", run_id, parent_run_id, error=repr(error))
 
 
-def to_raw_turn(t: NormalizedTurn, latency_ms: float | None = None) -> dict:
-    """A NormalizedTurn in the observed-fixture shape (tool calls hang off their nodes)."""
+def to_trace_turn(t: TurnResult) -> dict:
+    """One turn in the trace-file shape (tool calls hang off their nodes)."""
     seq, nodes, flat_tools = 0, [], []
     for i, n in enumerate(t.nodes, 1):
         tools = []
         for c in n.tool_calls:
             seq += 1
-            call = {"tool_name": c.tool_id, "sequence_index": seq, "input": c.arguments, "output": c.result}
+            call = {"tool_name": c.tool, "sequence_index": seq, "input": c.args, "output": c.result}
             tools.append(call)
             flat_tools.append(call)
-        nodes.append({"node_id": n.node_id, "sequence_index": i,
-                      "state_changes": [{"key": c.key, "old": c.old, "new": c.new} for c in n.state_changes],
+        nodes.append({"node_id": n.node_id, "sequence_index": i, "state_changes": n.state_changes,
                       "tool_calls": tools})
-    turn = {
+    return {
         "turn_id": t.turn_id,
-        "conversation": {"customer": t.customer_input, "agent": t.response},
+        "conversation": {"customer": t.user_input, "agent": t.reply},
         "nodes": nodes,
         "tool_calls": flat_tools,
-        "state_changes": [{"key": c.key, "old": c.old, "new": c.new} for c in t.state_changes],
-        "routing": {"path": t.routing.path, "target": t.routing.target} if t.routing else None,
+        "state_changes": [c for n in t.nodes for c in n.state_changes],
+        "routing": t.route,
+        "timing": {"response_latency_ms": round(t.latency_ms)},
     }
-    if latency_ms is not None:
-        turn["timing"] = {"response_latency_ms": round(latency_ms)}
-    return turn
 
 
 class TraceStore:
@@ -148,7 +145,7 @@ class TraceStore:
             self.raw_path(conversation_id).unlink(missing_ok=True)
         return RawEventHandler(self.raw_path(conversation_id), conversation_id, turn_id)
 
-    def save_turn(self, conversation_id: str, turn: NormalizedTurn, latency_ms: float | None = None) -> Path:
+    def save_turn(self, conversation_id: str, turn: TurnResult) -> Path:
         with self._lock:
             doc = self._docs.get(conversation_id)
             if doc is None or turn.turn_id == 1:
@@ -162,9 +159,9 @@ class TraceStore:
                     "availability": dict(AVAILABILITY),
                     "turns": [],
                 }
-            doc["turns"] = [t for t in doc["turns"] if t["turn_id"] != turn.turn_id] + [to_raw_turn(turn, latency_ms)]
+            doc["turns"] = [t for t in doc["turns"] if t["turn_id"] != turn.turn_id] + [to_trace_turn(turn)]
             if turn.outcome:
-                doc["outcome"] = {"id": turn.outcome.id, "attributes": turn.outcome.attributes}
+                doc["outcome"] = {"id": turn.outcome["id"], "attributes": turn.outcome["attributes"]}
             self.directory.mkdir(parents=True, exist_ok=True)
             path = self.directory / f"{conversation_id}.json"
             tmp = path.with_suffix(".json.tmp")

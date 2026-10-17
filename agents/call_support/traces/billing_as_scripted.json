@@ -11,7 +11,7 @@
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
-  "recorded_at": "2026-10-17T08:06:03Z",
+  "recorded_at": "2026-10-17T08:16:35Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -129,14 +129,14 @@
         "target": "self_service"
       },
       "timing": {
-        "response_latency_ms": 2654
+        "response_latency_ms": 2647
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "That doesn't look right. I want to dispute it with a human.",
-        "agent": "Thanks for your patience. I've opened ticket TCK-1002-BIL for your billing concern, and a human agent will contact you."
+        "agent": "Thanks for your patience. I've opened ticket TCK-1002-BIL for your billing question, and a human agent will contact you about it."
       },
       "nodes": [
         {
@@ -206,7 +206,7 @@
         "target": "human_agent"
       },
       "timing": {
-        "response_latency_ms": 1947
+        "response_latency_ms": 1941
       }
     }
   ],

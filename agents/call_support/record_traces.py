@@ -59,7 +59,7 @@ def record(name, golden, deviation, description, messages, trace_dir) -> Path:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--out", default=None, help="trace directory (default: the agent's own)")
+    p.add_argument("--out", default=str(HERE / "traces"), help="trace directory (default: agents/call_support/traces)")
     args = p.parse_args()
     for sc in SCENARIOS:
         t0 = time.time()

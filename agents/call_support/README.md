@@ -4,28 +4,15 @@ A phone-support agent for a fictional telecom ("Nimbus Telecom"), built with **L
 
 ## The agent
 
-```
-START ─▶ identify_customer ─▶ classify_intent ─▶ billing_node ─────────────▶ END
-          (if not verified)    (LLM, structured)  outage_node ─(outage)────▶ END
-START ─▶ classify_intent        (verified)                   └─(none)─▶ escalate_node ─▶ END
-                                                  escalate_node / close_node / clarify_node ─▶ END
-```
+The agent is its own project in [`../../call_support_agent/`](../../call_support_agent/) (LangGraph + LangChain, built-in tracing, no `atf_eval` dependency). This folder is only its evaluation:
 
 | File | Role |
 |---|---|
-| `graph.py` | The LangGraph `StateGraph` (nodes, conditional edges, `MemorySaver` checkpointer; one conversation = one thread) |
-| `tools.py` | LangChain tools over an in-memory CRM: `lookup_account`, `get_bill`, `check_outage`, `create_ticket` |
-| `adapter.py` | `CallSupportAdapter`: runs one turn and normalizes the trace for atf-eval |
+| `adapter.py` | the only bridge: calls `CallSupportAgent.chat()` and converts the result to a `NormalizedTurn` |
 | `golden_dataset.jsonl` | 3 conversations / 6 turns of expected behaviour (for live `atf-eval run`) |
 | `golden/*.json` | the same 3 goldens in the canonical trace format (for `atf-eval dashboard`) |
-| `tracing.py` | trace capture, on whenever the agent runs (below) |
-| `chat.py` | talk to the agent in the terminal; each turn is traced |
-| `record_traces.py` | plays 7 scripted customers against the agent (the agent saves the traces itself) |
-| `traces/` | saved traces: `<conversation>.json` (ATF-ready) and `raw/<conversation>.jsonl` (callback events) |
-
-- **Verification:** if the caller hasn't given an account id (`ACC-1234`), the agent asks for it and remembers what they said; once given, it classifies the *original* complaint.
-- **LLM use:** Claude (`claude-haiku-5-5` by default, `CALL_SUPPORT_MODEL` to change) classifies intent (structured output) and writes replies. With no `ANTHROPIC_API_KEY` it falls back to keyword rules and canned replies, so it still runs offline.
-- **Routing targets:** `self_service`, `human_agent`, `customer`.
+| `record_traces.py` | plays 7 scripted customers against the agent; the agent saves the traces itself |
+| `traces/` | the traces it saved: `<conversation>.json` and `raw/<conversation>.jsonl` |
 
 ## How the trace maps to ATF
 
@@ -48,27 +35,23 @@ python -m atf_eval run \
   --output-dir results/            # add --no-routing-judge to skip the RS judge
 ```
 
-## Tracing
-
-Tracing is built into `CallSupportAdapter`, so any run of the agent saves its trace:
-
-| Where | What |
-|---|---|
-| `traces/<conversation_id>.json` | ATF-ready trace: nodes, tool calls and state changes per turn, routing, outcome, per-turn latency. Rewritten after every turn. |
-| `traces/raw/<conversation_id>.jsonl` | raw LangChain/LangGraph callback events: node, tool and LLM calls with timestamps, durations, prompts, replies and token usage |
-| LangSmith (optional) | set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` (and `LANGSMITH_PROJECT`); runs are named `call_support/<conversation>/turn<N>` and tagged with the conversation id. Not tested here: no LangSmith key was available. |
-
-Change the folder with `CALL_SUPPORT_TRACE_DIR` or `CallSupportAdapter(trace_dir=...)`; `save_traces=False` turns local saving off.
+## Run the evaluation
 
 ```bash
-python -m agents.call_support.chat --golden support_outage_resolved   # talk to it; the trace is saved
-python -m agents.call_support.record_traces                          # or replay the 7 scripted customers
+pip install -e .                      # atf-eval, from the repo root
+pip install -e call_support_agent     # the agent
+python -m agents.call_support.record_traces        # plays the scripted customers; the agent traces itself
 atf-eval dashboard --golden-dir agents/call_support/golden \
   --scenarios agents/call_support/traces --output-dir agents/call_support/results \
-  --no-llm-evals                                                      # drop the flag to add Group 1-5
+  --no-llm-evals                                    # drop the flag to add Group 1-5
+# or score it live, without saved traces:
+atf-eval run --dataset agents/call_support/golden_dataset.jsonl \
+  --adapter agents.call_support.adapter:CallSupportAdapter
 ```
 
-A trace is scored against the golden named by its `golden_scenario` (pass `--golden` to `chat`); without one the dashboard can't tell which golden to use. The dashboard also scores each golden against itself as a baseline.
+Tracing itself (what is saved, LangSmith) is described in the agent's README. Running through the adapter saves traces too, to `$CALL_SUPPORT_TRACE_DIR` or `./traces`.
+
+A trace is scored against the golden named by its `golden_scenario` (`call-support-chat --meta golden_scenario=<name>`); without one the dashboard can't tell which golden to use. The dashboard also scores each golden against itself as a baseline.
 
 ## Results
 

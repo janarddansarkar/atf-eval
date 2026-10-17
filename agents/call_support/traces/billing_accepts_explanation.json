@@ -11,7 +11,7 @@
     "framework": "langgraph",
     "model": "claude-haiku-5-5"
   },
-  "recorded_at": "2026-10-17T08:06:07Z",
+  "recorded_at": "2026-10-17T08:16:40Z",
   "availability": {
     "nodes": "available",
     "state": "available",
@@ -129,14 +129,14 @@
         "target": "self_service"
       },
       "timing": {
-        "response_latency_ms": 2470
+        "response_latency_ms": 2540
       }
     },
     {
       "turn_id": 2,
       "conversation": {
         "customer": "Oh I see, the roaming charge. That's all, thanks.",
-        "agent": "Thanks for calling Nimbus Telecom, and have a great day!"
+        "agent": "Thanks so much for calling Nimbus Telecom, and have a great day!"
       },
       "nodes": [
         {
@@ -182,7 +182,7 @@
         "target": "customer"
       },
       "timing": {
-        "response_latency_ms": 2333
+        "response_latency_ms": 1687
       }
     }
   ],
