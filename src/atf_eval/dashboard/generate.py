@@ -603,7 +603,7 @@ def render_glance_row(run: dict, baseline: bool) -> str:
 def render_component_row(label: str, score: float | None, diag: bool) -> str:
     b = band(score)
     diag_tag = '<span class="diag">diagnostic</span>' if diag else ""
-    color = "" if score is not None else f' style="color:var(--na)"'
+    color = "" if score is not None else ' style="color:var(--na)"'
     return f"""
               <div class="component-row"><span class="c-label">{label}{diag_tag}</span><span class="c-track"><span class="c-fill {b}" style="width:{pct(score)}"></span></span><span class="c-score"{color}>{fmt(score)}</span></div>"""
 
