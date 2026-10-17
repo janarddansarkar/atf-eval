@@ -36,7 +36,3 @@ def resolve_availability(
     if not judge_configured and availability["routing"] == "available":
         availability["routing"] = "not_applicable"
     return availability
-
-
-def is_scorable(availability: dict[str, str], metric_id: str) -> bool:
-    return availability[METRIC_DIMENSION[metric_id]] == "available"

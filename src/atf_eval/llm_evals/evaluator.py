@@ -16,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from atf_eval.llm_evals.base import (
-    NOT_APPLICABLE,
     LLMMetricResult,
     Level,
     MetricSpec,

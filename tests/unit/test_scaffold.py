@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from atf_eval.dataset import load_dataset

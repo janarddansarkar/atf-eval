@@ -72,14 +72,6 @@ def weighted_composite(components: dict[str, float | None], weights: dict[str, f
     return total_score / total_weight
 
 
-def aggregate_turns(turn_scores: list[float | None], turn_weight: float = 1.0) -> float | None:
-    """Σ(score*turn_weight) / Σ(turn_weight) over non-None turn scores (spec §7.5)."""
-    applicable = [s for s in turn_scores if s is not None]
-    if not applicable:
-        return None
-    return sum(s * turn_weight for s in applicable) / (len(applicable) * turn_weight)
-
-
 def atf_score(
     group_scores: dict[str, float | None], weights: dict[str, float]
 ) -> tuple[float | None, float]:

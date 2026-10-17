@@ -6,8 +6,7 @@ Standalone evaluation framework for **Agent Trajectory Fidelity (ATF)** — scor
 closely an agent's observed execution trajectory (nodes visited, state transitions, tool
 calls, routing decisions, final outcome) matches an expected trajectory defined by a
 golden dataset. See `METRICS.md` for the frozen scoring specification this package
-implements (supersedes `ATF_Metric_Definition_Evaluation_Specification.md`, the
-original draft spec).
+implements (it lives in the separate `agent-eval` repo, checked out here as `agent-eval/`).
 
 ## Ways to run it
 
@@ -48,7 +47,7 @@ Optional extras: `[server]` (FastAPI + uvicorn, for `atf-eval serve`), `[client]
 **For step-by-step setup and run instructions (install, API keys, the `atf-eval
 dashboard` command), see `HOW_TO_USE.md`.** This README is the API/conceptual
 reference: the adapter contract, golden dataset schema, metric group definitions, and
-the Python API for Policy Compliance and the scorecard.
+
 
 Four of five metric groups (NTS, STS, TIS, OS) are fully deterministic — closed-form
 formulas, no LLM calls. **RS is the one exception**: it's an LLM-based semantic judge
@@ -176,114 +175,6 @@ is reported as `null`/N/A and excluded from both the numerator and denominator o
 weighted average above it — never coalesced to a score of `0`. The report always includes
 `metric_coverage` alongside the ATF score so you can see how much of the score is backed
 by applicable evidence.
-
-## Policy Compliance (separate from ATF)
-
-ATF answers "did the agent follow the expected trajectory?" — it says nothing about
-whether an action the agent took was actually *allowed*. A conversation can score well on
-ATF while still granting a waiver, discount, or exception the domain's rules never
-permitted. Policy Compliance is a deliberately separate, parallel check for exactly that
-case, reusing the same `NormalizedTurn` objects your adapter already produces (no second
-agent invocation needed — see "Reusing the captured trace" below).
-
-Write `PolicyRule`s as plain Python predicates (mirrors the adapter pattern: domain
-knowledge belongs in code you write, not a config format the engine has to interpret):
-
-```python
-from atf_eval.policy.rules import PolicyRule
-from atf_eval.policy.helpers import tool_calls_named, latest_state_value
-
-def waiver_requires_capacity_check(turn, history, context):
-    for tc in tool_calls_named(turn, "waive_premium"):
-        capacity = latest_state_value(history, turn, "customer_payment_capacity")
-        if capacity is None:
-            return "Premium waived without ever checking payment capacity."
-    return None
-
-RULES = [
-    PolicyRule(
-        rule_id="waiver_requires_capacity_check",
-        description="A premium waiver must not be granted before payment capacity is assessed.",
-        severity="critical",   # "critical" fails the PASS/FAIL gate; "warning" is advisory only
-        check=waiver_requires_capacity_check,
-    ),
-]
-```
-
-```python
-from atf_eval.policy.checker import evaluate_conversation
-
-result = evaluate_conversation(conv_result.observed_turns, RULES, context={"policy": {...}})
-# result.status: "pass" | "fail"
-# result.violations: list[PolicyViolation] (rule_id, severity, turn_id, detail)
-```
-
-`context` is whatever domain data your rules need (policy limits, eligibility rules,
-etc.) — supplied by you, not derived from the trajectory.
-
-### Reusing the captured trace
-
-`run_evaluation()` returns each `ConversationResult` with `.expected_turns` /
-`.observed_turns` already attached, so Policy Compliance (and the scorecard's deviation
-detection) run against the *same* captured trace ATF already scored — no need to
-re-invoke a live agent a second time.
-
-## Scorecard (diagnostic report)
-
-`render_scorecard()` turns one conversation's `ConversationResult` (+ optional
-`PolicyResult`) into the actionable text report the spec's §17 asks for ("never collapse
-the evaluation into ATF alone") — ATF score and group breakdown, the policy PASS/FAIL gate
-and any violations, plus the single most significant state deviation and tool deviation:
-
-```python
-from atf_eval.scorecard import render_scorecard
-
-print(render_scorecard("Motor Insurance — Payment Difficulty", conv_result, policy_result))
-```
-
-```
-Scenario
-Motor Insurance — Payment Difficulty
-
-────────────────────────────────────────
-
-ATF SCORE                          91.4%
-
-Node Traversal                     95.0%
-State Transition                   88.0%
-Tool Invocation                    92.0%
-Routing                           100.0%
-Outcome                           100.0%
-
-────────────────────────────────────────
-
-POLICY COMPLIANCE                   PASS
-
-────────────────────────────────────────
-
-Key Deviation
-
-STS ↓
-
-Expected:
-cannot_pay → partial_pay
-
-Observed:
-(not updated)
-
-Reason:
-Agent did not update 'customer_payment_posture'.
-
-────────────────────────────────────────
-
-Tool Deviation
-
-Expected:
-check_installment_eligibility
-
-Observed:
-Not invoked
-```
 
 ## CLI flags and worked examples
 

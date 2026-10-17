@@ -108,19 +108,6 @@ def routing_verdict(
     )
 
 
-def semantic_routing_score(
-    customer_input: str,
-    expected: NormalizedTurn,
-    observed: NormalizedTurn,
-    judge_client: LLMProvider | None,
-    judge_model: str | None = None,
-    judge_effort: str | None = None,
-) -> float | None:
-    """Score-only convenience wrapper around routing_verdict()."""
-    v = routing_verdict(customer_input, expected, observed, judge_client, judge_model, judge_effort)
-    return v.score if v is not None else None
-
-
 def rs_turn(semantic_score: float | None) -> float | None:
     """Turn-level score: order is only defined across the conversation, so
     this is the judge score itself (None when the turn was not judged)."""
