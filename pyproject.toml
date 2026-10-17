@@ -6,11 +6,11 @@ requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.6",
     "anthropic>=0.40.0",
-    "openai>=1.0",  # NVIDIA NIM's OpenAI-compatible API
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "jsonschema>=4.0"]
+nvidia = ["openai>=1.0"]  # NVIDIA NIM's OpenAI-compatible API
+dev = ["pytest>=8.0", "jsonschema>=4.0", "openai>=1.0"]
 
 [project.scripts]
 atf-eval = "atf_eval.cli:main"

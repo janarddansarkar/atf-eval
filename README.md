@@ -43,6 +43,7 @@ The LLM judges (RS and the Group 1-5 metrics) support two providers, chosen with
 | `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-opus-5` |
 | `nvidia` (NIM, OpenAI-compatible; `NVIDIA_BASE_URL` overrides the endpoint) | `NVIDIA_API_KEY` | `openai/gpt-oss-20b` |
 
+The NVIDIA provider needs the optional `openai` package: `pip install -e ".[nvidia]"`.
 `--effort` applies only to Anthropic. All provider-specific code lives in
 `src/atf_eval/llm_provider.py`; to add a provider, implement `parse_structured()` there
 and register the class in `PROVIDERS`. Scores from different judge models are not

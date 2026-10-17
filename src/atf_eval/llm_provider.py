@@ -108,7 +108,12 @@ class NvidiaProvider:
     default_base_url = "https://integrate.api.nvidia.com/v1"
 
     def __init__(self) -> None:
-        import openai
+        try:
+            import openai
+        except ImportError as e:
+            raise ImportError(
+                "the nvidia provider needs the openai package: pip install 'atf-eval[nvidia]'"
+            ) from e
 
         self._openai = openai
         self._client = openai.OpenAI(
