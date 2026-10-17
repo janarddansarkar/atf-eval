@@ -17,9 +17,9 @@ from atf_eval.api.app import create_app  # noqa: E402
 from atf_eval.client import AtfApiError, AtfClient, collect  # noqa: E402
 from atf_eval.dataset import load_dataset  # noqa: E402
 from atf_eval.normalized import NormalizedNode, NormalizedTurn  # noqa: E402
-from examples.mock_adapter import MockTrajectoryAgent  # noqa: E402
+from tests.fixtures.mock_adapter import MockTrajectoryAgent  # noqa: E402
 
-DATASET = str(ROOT / "examples" / "golden_dataset.jsonl")
+DATASET = str(ROOT / "tests" / "fixtures" / "mock_golden_dataset.jsonl")
 OFFLINE = {"routing_judge": False, "llm_evals": False}
 
 

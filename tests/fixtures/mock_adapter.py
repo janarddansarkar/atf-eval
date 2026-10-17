@@ -1,6 +1,6 @@
 """Dependency-free TrajectoryAgent for smoke-testing atf_eval itself -- no
 external agent, no LLM, no network. Returns a canned trajectory that matches
-`golden_dataset.jsonl` turn-for-turn, so a full `atf-eval run` against it is a
+`mock_golden_dataset.jsonl` turn-for-turn, so a full `atf-eval run` against it is a
 runnable, eyeball-able "does the framework still work" check.
 """
 from __future__ import annotations
