@@ -1,0 +1,186 @@
+{
+  "trace_id": "outage_as_scripted",
+  "scenario_id": "outage_as_scripted",
+  "golden_scenario": "support_outage_resolved",
+  "trace_type": "observed",
+  "deviation_type": "none",
+  "deviation": {
+    "description": "Customer follows the golden script."
+  },
+  "agent": {
+    "framework": "langgraph",
+    "model": "claude-haiku-5-5"
+  },
+  "availability": {
+    "nodes": "available",
+    "state": "available",
+    "tools": "available",
+    "routing": "available",
+    "outcome": "available"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "conversation": {
+        "customer": "Hi, my internet is down. My account is ACC-1001.",
+        "agent": "I'm really sorry for the trouble. There's a known fibre cable fault in your area, and it's estimated to be fixed by 6pm today."
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "authenticated",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "lookup_account",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-1001"
+              },
+              "output": {
+                "account_id": "ACC-1001",
+                "name": "Alex Morgan",
+                "postcode": "N1 4AB",
+                "plan": "Fibre 500"
+              }
+            }
+          ]
+        },
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": null,
+              "new": "outage"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "outage_node",
+          "sequence_index": 3,
+          "state_changes": [],
+          "tool_calls": [
+            {
+              "tool_name": "check_outage",
+              "sequence_index": 2,
+              "input": {
+                "postcode": "N1 4AB"
+              },
+              "output": {
+                "outage": true,
+                "detail": "fibre cable fault, estimated fix by 6pm today"
+              }
+            }
+          ]
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "lookup_account",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-1001"
+          },
+          "output": {
+            "account_id": "ACC-1001",
+            "name": "Alex Morgan",
+            "postcode": "N1 4AB",
+            "plan": "Fibre 500"
+          }
+        },
+        {
+          "tool_name": "check_outage",
+          "sequence_index": 2,
+          "input": {
+            "postcode": "N1 4AB"
+          },
+          "output": {
+            "outage": true,
+            "detail": "fibre cable fault, estimated fix by 6pm today"
+          }
+        }
+      ],
+      "state_changes": [
+        {
+          "key": "authenticated",
+          "old": false,
+          "new": true
+        },
+        {
+          "key": "intent",
+          "old": null,
+          "new": "outage"
+        }
+      ],
+      "routing": {
+        "path": "outage",
+        "target": "self_service"
+      }
+    },
+    {
+      "turn_id": 2,
+      "conversation": {
+        "customer": "Okay thanks, that's all I needed.",
+        "agent": "Thank you for calling Nimbus Telecom, and have a great day!"
+      },
+      "nodes": [
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": "outage",
+              "new": "goodbye"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "close_node",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "resolved",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": []
+        }
+      ],
+      "tool_calls": [],
+      "state_changes": [
+        {
+          "key": "intent",
+          "old": "outage",
+          "new": "goodbye"
+        },
+        {
+          "key": "resolved",
+          "old": false,
+          "new": true
+        }
+      ],
+      "routing": {
+        "path": "close",
+        "target": "customer"
+      }
+    }
+  ],
+  "outcome": {
+    "id": "issue_resolved",
+    "attributes": {
+      "category": "outage"
+    }
+  }
+}

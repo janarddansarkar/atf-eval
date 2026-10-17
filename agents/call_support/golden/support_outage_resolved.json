@@ -1,0 +1,135 @@
+{
+  "trace_id": "support_outage_resolved",
+  "schema_version": "1.0",
+  "agent_id": "nimbus-call-support-golden",
+  "adapter_id": "golden-canonical",
+  "metadata": {
+    "scenario_id": "support_outage_resolved",
+    "domain": "telecom_call_support",
+    "description": "Verified caller reports an outage; agent confirms a known outage and closes when the caller is done."
+  },
+  "availability": {
+    "nodes": "available",
+    "state": "available",
+    "tools": "available",
+    "routing": "available",
+    "outcome": "available"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "input": {
+        "customer": "Hi, my internet is down. My account is ACC-1001."
+      },
+      "output": {
+        "agent": "I'm sorry about that. There's a known outage in your area from a fibre cable fault, and engineers expect it fixed by 6pm today."
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence": 1,
+          "state_changes": [
+            {
+              "key": "authenticated",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_id": "lookup_account",
+              "sequence": 1,
+              "input": {
+                "account_id": "ACC-1001"
+              },
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "node_id": "classify_intent",
+          "sequence": 2,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": null,
+              "new": "outage"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "outage_node",
+          "sequence": 3,
+          "state_changes": [],
+          "tool_calls": [
+            {
+              "tool_id": "check_outage",
+              "sequence": 1,
+              "input": {
+                "postcode": "N1 4AB"
+              },
+              "status": "success"
+            }
+          ]
+        }
+      ],
+      "routing": {
+        "path": "outage",
+        "target": "self_service"
+      }
+    },
+    {
+      "turn_id": 2,
+      "input": {
+        "customer": "Okay thanks, that's all I needed."
+      },
+      "output": {
+        "agent": "Glad I could help. Goodbye!"
+      },
+      "nodes": [
+        {
+          "node_id": "classify_intent",
+          "sequence": 1,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": "outage",
+              "new": "goodbye"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "close_node",
+          "sequence": 2,
+          "state_changes": [
+            {
+              "key": "resolved",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": []
+        }
+      ],
+      "routing": {
+        "path": "close",
+        "target": "customer"
+      }
+    }
+  ],
+  "final_state": {
+    "authenticated": true,
+    "resolved": true
+  },
+  "outcome": {
+    "id": "issue_resolved",
+    "attributes": {
+      "category": "outage"
+    },
+    "required_conditions": [
+      "category"
+    ]
+  }
+}

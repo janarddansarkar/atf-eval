@@ -1,0 +1,212 @@
+{
+  "trace_id": "billing_as_scripted",
+  "scenario_id": "billing_as_scripted",
+  "golden_scenario": "support_billing_dispute",
+  "trace_type": "observed",
+  "deviation_type": "none",
+  "deviation": {
+    "description": "Customer follows the golden script."
+  },
+  "agent": {
+    "framework": "langgraph",
+    "model": "claude-haiku-5-5"
+  },
+  "availability": {
+    "nodes": "available",
+    "state": "available",
+    "tools": "available",
+    "routing": "available",
+    "outcome": "available"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "conversation": {
+        "customer": "Hello, I'm ACC-1002. Why is my bill so high this month?",
+        "agent": "Your latest bill is 89.50 (includes a one-off 40.00 roaming charge)."
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "authenticated",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "lookup_account",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-1002"
+              },
+              "output": {
+                "account_id": "ACC-1002",
+                "name": "Sam Rivera",
+                "postcode": "M3 2CD",
+                "plan": "Fibre 100"
+              }
+            }
+          ]
+        },
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": null,
+              "new": "billing"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "billing_node",
+          "sequence_index": 3,
+          "state_changes": [],
+          "tool_calls": [
+            {
+              "tool_name": "get_bill",
+              "sequence_index": 2,
+              "input": {
+                "account_id": "ACC-1002"
+              },
+              "output": {
+                "amount": 89.5,
+                "usual": 49.5,
+                "note": "includes a one-off 40.00 roaming charge"
+              }
+            }
+          ]
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "lookup_account",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-1002"
+          },
+          "output": {
+            "account_id": "ACC-1002",
+            "name": "Sam Rivera",
+            "postcode": "M3 2CD",
+            "plan": "Fibre 100"
+          }
+        },
+        {
+          "tool_name": "get_bill",
+          "sequence_index": 2,
+          "input": {
+            "account_id": "ACC-1002"
+          },
+          "output": {
+            "amount": 89.5,
+            "usual": 49.5,
+            "note": "includes a one-off 40.00 roaming charge"
+          }
+        }
+      ],
+      "state_changes": [
+        {
+          "key": "authenticated",
+          "old": false,
+          "new": true
+        },
+        {
+          "key": "intent",
+          "old": null,
+          "new": "billing"
+        }
+      ],
+      "routing": {
+        "path": "billing",
+        "target": "self_service"
+      }
+    },
+    {
+      "turn_id": 2,
+      "conversation": {
+        "customer": "That doesn't look right. I want to dispute it with a human.",
+        "agent": "Thanks for your patience. I've opened ticket TCK-1002-BIL regarding your billing question, and a human agent will be in touch with you."
+      },
+      "nodes": [
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": "billing",
+              "new": "escalate"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "escalate_node",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "ticket_id",
+              "old": null,
+              "new": "TCK-1002-BIL"
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "create_ticket",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-1002",
+                "category": "billing"
+              },
+              "output": {
+                "ticket_id": "TCK-1002-BIL"
+              }
+            }
+          ]
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "create_ticket",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-1002",
+            "category": "billing"
+          },
+          "output": {
+            "ticket_id": "TCK-1002-BIL"
+          }
+        }
+      ],
+      "state_changes": [
+        {
+          "key": "intent",
+          "old": "billing",
+          "new": "escalate"
+        },
+        {
+          "key": "ticket_id",
+          "old": null,
+          "new": "TCK-1002-BIL"
+        }
+      ],
+      "routing": {
+        "path": "escalate",
+        "target": "human_agent"
+      }
+    }
+  ],
+  "outcome": {
+    "id": "ticket_created",
+    "attributes": {
+      "category": "billing"
+    }
+  }
+}

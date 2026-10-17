@@ -1,0 +1,236 @@
+{
+  "trace_id": "slow_wrong_account_first",
+  "scenario_id": "slow_wrong_account_first",
+  "golden_scenario": "support_slow_no_outage",
+  "trace_type": "observed",
+  "deviation_type": "extra_turn_wrong_account",
+  "deviation": {
+    "description": "Customer first gives an unknown account id, so the agent must ask again (3 turns vs the golden's 2)."
+  },
+  "agent": {
+    "framework": "langgraph",
+    "model": "claude-haiku-5-5"
+  },
+  "availability": {
+    "nodes": "available",
+    "state": "available",
+    "tools": "available",
+    "routing": "available",
+    "outcome": "available"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "conversation": {
+        "customer": "My internet has been really slow lately.",
+        "agent": "Thanks for calling Nimbus Telecom! To look up your account, could you please share your account ID? It's in the format ACC-1234."
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [],
+          "tool_calls": []
+        }
+      ],
+      "tool_calls": [],
+      "state_changes": [],
+      "routing": {
+        "path": "ask_account",
+        "target": "customer"
+      }
+    },
+    {
+      "turn_id": 2,
+      "conversation": {
+        "customer": "It's ACC-9999.",
+        "agent": "I'm sorry, but I couldn't find an account matching that ID. Could you please double-check it and read it back to me?"
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [],
+          "tool_calls": [
+            {
+              "tool_name": "lookup_account",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-9999"
+              },
+              "output": {}
+            }
+          ]
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "lookup_account",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-9999"
+          },
+          "output": {}
+        }
+      ],
+      "state_changes": [],
+      "routing": {
+        "path": "ask_account",
+        "target": "customer"
+      }
+    },
+    {
+      "turn_id": 3,
+      "conversation": {
+        "customer": "Sorry, ACC-1003.",
+        "agent": "Thank you for your patience. I've opened ticket TCK-1003-OUT regarding the outage, and a human agent will contact you."
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "authenticated",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "lookup_account",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-1003"
+              },
+              "output": {
+                "account_id": "ACC-1003",
+                "name": "Priya Nair",
+                "postcode": "S2 9XY",
+                "plan": "Fibre 300"
+              }
+            }
+          ]
+        },
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": null,
+              "new": "outage"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "outage_node",
+          "sequence_index": 3,
+          "state_changes": [],
+          "tool_calls": [
+            {
+              "tool_name": "check_outage",
+              "sequence_index": 2,
+              "input": {
+                "postcode": "S2 9XY"
+              },
+              "output": {
+                "outage": false,
+                "detail": null
+              }
+            }
+          ]
+        },
+        {
+          "node_id": "escalate_node",
+          "sequence_index": 4,
+          "state_changes": [
+            {
+              "key": "ticket_id",
+              "old": null,
+              "new": "TCK-1003-OUT"
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "create_ticket",
+              "sequence_index": 3,
+              "input": {
+                "account_id": "ACC-1003",
+                "category": "outage"
+              },
+              "output": {
+                "ticket_id": "TCK-1003-OUT"
+              }
+            }
+          ]
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "lookup_account",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-1003"
+          },
+          "output": {
+            "account_id": "ACC-1003",
+            "name": "Priya Nair",
+            "postcode": "S2 9XY",
+            "plan": "Fibre 300"
+          }
+        },
+        {
+          "tool_name": "check_outage",
+          "sequence_index": 2,
+          "input": {
+            "postcode": "S2 9XY"
+          },
+          "output": {
+            "outage": false,
+            "detail": null
+          }
+        },
+        {
+          "tool_name": "create_ticket",
+          "sequence_index": 3,
+          "input": {
+            "account_id": "ACC-1003",
+            "category": "outage"
+          },
+          "output": {
+            "ticket_id": "TCK-1003-OUT"
+          }
+        }
+      ],
+      "state_changes": [
+        {
+          "key": "authenticated",
+          "old": false,
+          "new": true
+        },
+        {
+          "key": "intent",
+          "old": null,
+          "new": "outage"
+        },
+        {
+          "key": "ticket_id",
+          "old": null,
+          "new": "TCK-1003-OUT"
+        }
+      ],
+      "routing": {
+        "path": "escalate",
+        "target": "human_agent"
+      }
+    }
+  ],
+  "outcome": {
+    "id": "ticket_created",
+    "attributes": {
+      "category": "outage"
+    }
+  }
+}

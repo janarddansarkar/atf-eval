@@ -1,0 +1,134 @@
+{
+  "trace_id": "slow_unclear_after_account",
+  "scenario_id": "slow_unclear_after_account",
+  "golden_scenario": "support_slow_no_outage",
+  "trace_type": "observed",
+  "deviation_type": "off_script_clarification",
+  "deviation": {
+    "description": "After verifying, the customer asks something vague instead of repeating the issue."
+  },
+  "agent": {
+    "framework": "langgraph",
+    "model": "claude-haiku-5-5"
+  },
+  "availability": {
+    "nodes": "available",
+    "state": "available",
+    "tools": "available",
+    "routing": "available",
+    "outcome": "available"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "conversation": {
+        "customer": "Hi, ACC-1003 here.",
+        "agent": "Thanks for reaching out to Nimbus Telecom! I'm not quite sure what you need help with yet. Could you tell me what you're calling about?"
+      },
+      "nodes": [
+        {
+          "node_id": "identify_customer",
+          "sequence_index": 1,
+          "state_changes": [
+            {
+              "key": "authenticated",
+              "old": false,
+              "new": true
+            }
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "lookup_account",
+              "sequence_index": 1,
+              "input": {
+                "account_id": "ACC-1003"
+              },
+              "output": {
+                "account_id": "ACC-1003",
+                "name": "Priya Nair",
+                "postcode": "S2 9XY",
+                "plan": "Fibre 300"
+              }
+            }
+          ]
+        },
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 2,
+          "state_changes": [
+            {
+              "key": "intent",
+              "old": null,
+              "new": "other"
+            }
+          ],
+          "tool_calls": []
+        },
+        {
+          "node_id": "clarify_node",
+          "sequence_index": 3,
+          "state_changes": [],
+          "tool_calls": []
+        }
+      ],
+      "tool_calls": [
+        {
+          "tool_name": "lookup_account",
+          "sequence_index": 1,
+          "input": {
+            "account_id": "ACC-1003"
+          },
+          "output": {
+            "account_id": "ACC-1003",
+            "name": "Priya Nair",
+            "postcode": "S2 9XY",
+            "plan": "Fibre 300"
+          }
+        }
+      ],
+      "state_changes": [
+        {
+          "key": "authenticated",
+          "old": false,
+          "new": true
+        },
+        {
+          "key": "intent",
+          "old": null,
+          "new": "other"
+        }
+      ],
+      "routing": {
+        "path": "clarify",
+        "target": "customer"
+      }
+    },
+    {
+      "turn_id": 2,
+      "conversation": {
+        "customer": "Honestly, it's just not great.",
+        "agent": "Sorry, I didn't quite catch that. What can I help you with today?"
+      },
+      "nodes": [
+        {
+          "node_id": "classify_intent",
+          "sequence_index": 1,
+          "state_changes": [],
+          "tool_calls": []
+        },
+        {
+          "node_id": "clarify_node",
+          "sequence_index": 2,
+          "state_changes": [],
+          "tool_calls": []
+        }
+      ],
+      "tool_calls": [],
+      "state_changes": [],
+      "routing": {
+        "path": "clarify",
+        "target": "customer"
+      }
+    }
+  ]
+}

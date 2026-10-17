@@ -16,7 +16,10 @@ START ─▶ classify_intent        (verified)                   └─(none)─
 | `graph.py` | The LangGraph `StateGraph` (nodes, conditional edges, `MemorySaver` checkpointer; one conversation = one thread) |
 | `tools.py` | LangChain tools over an in-memory CRM: `lookup_account`, `get_bill`, `check_outage`, `create_ticket` |
 | `adapter.py` | `CallSupportAdapter`: runs one turn and normalizes the trace for atf-eval |
-| `golden_dataset.jsonl` | 3 conversations / 6 turns of expected behaviour |
+| `golden_dataset.jsonl` | 3 conversations / 6 turns of expected behaviour (for live `atf-eval run`) |
+| `golden/*.json` | the same 3 goldens in the canonical trace format (for `atf-eval dashboard`) |
+| `record_traces.py` | runs the agent over 7 scripted conversations and writes the traces |
+| `traces/*.json` | the recorded observed traces |
 
 - **Verification:** if the caller hasn't given an account id (`ACC-1234`), the agent asks for it and remembers what they said; once given, it classifies the *original* complaint.
 - **LLM use:** Claude (`claude-haiku-5-5` by default, `CALL_SUPPORT_MODEL` to change) classifies intent (structured output) and writes replies. With no `ANTHROPIC_API_KEY` it falls back to keyword rules and canned replies, so it still runs offline.
@@ -43,10 +46,29 @@ python -m atf_eval run \
   --output-dir results/            # add --no-routing-judge to skip the RS judge
 ```
 
+## Record traces, then score them
+
+```bash
+python -m agents.call_support.record_traces        # runs the live agent -> traces/*.json
+atf-eval dashboard --golden-dir agents/call_support/golden \
+  --scenarios agents/call_support/traces --output-dir agents/call_support/results \
+  --no-llm-evals                                    # drop this flag to add the Group 1-5 LLM metrics
+```
+
+Each trace names the golden it follows (`golden_scenario`) and a `deviation_type`. Re-recording calls the LLM again, so replies (and RS) can differ slightly; the committed traces are the ones scored below. The dashboard also scores each golden against itself as a baseline.
+
 ## Results
 
-Live run (Claude Haiku for the agent, the default Claude judge for RS): **ATF 1.000**, NTS / STS / TIS / RS / OS all 1.000 on 3 conversations / 6 turns. The offline keyword mode also scores 1.000.
+Scored from the recorded traces (RS judged by the default Claude judge; Groups 1-5 not run):
 
-That is a first baseline, not a hard test: the golden dataset describes the flow the graph was designed for, and the utterances are clear. To stress it, add paraphrased, ambiguous or off-script conversations to the dataset and re-run.
+| Trace | Golden | Deviation | ATF | NTS | STS | TIS | RS | OS |
+|---|---|---|---|---|---|---|---|---|
+| outage_as_scripted | outage_resolved | none | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| outage_paraphrased | outage_resolved | paraphrased input | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| billing_as_scripted | billing_dispute | none | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| billing_accepts_explanation | billing_dispute | customer doesn't dispute | 0.682 | 0.800 | 0.500 | 0.883 | 0.850 | 0.500 |
+| slow_as_scripted | slow_no_outage | none | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| slow_wrong_account_first | slow_no_outage | extra turn, unknown account | 0.909 | 0.900 | 1.000 | 0.925 | 0.500 | 1.000 |
+| slow_unclear_after_account | slow_no_outage | vague follow-up | 0.370 | 0.400 | 0.333 | 0.767 | 0.350 | 0.000 |
 
-Note that when the adapter raises (e.g. an API error), atf-eval scores that turn 0 rather than N/A, so a failed run shows up as a very low score.
+The agent reproduces the golden path when the customer follows it (even paraphrased). The three lower scores are the customer going off-script, not agent bugs: the "deviations" test how ATF scores a *different but reasonable* journey against a fixed golden. Note that adapter errors are scored 0, not N/A.
