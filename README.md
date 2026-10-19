@@ -1,6 +1,6 @@
 # atf-eval
 
-[![GitHub](https://img.shields.io/badge/GitHub-2597688js%2Fatf--eval-blue?logo=github)](https://github.com/2597688js/atf-eval)
+[![GitHub](https://img.shields.io/badge/GitHub-janarddansarkar%2Fatf--eval-blue?logo=github)](https://github.com/janarddansarkar/atf-eval)
 
 Standalone evaluation framework for **Agent Trajectory Fidelity (ATF)** — scores how
 closely an agent's observed execution trajectory (nodes visited, state transitions, tool
@@ -33,7 +33,7 @@ go in the **server's** `.env`; the agent side needs none.
 ## Quickstart
 
 ```bash
-pip install git+https://github.com/2597688js/atf-eval.git
+pip install git+https://github.com/janarddansarkar/atf-eval.git
 mkdir my-atf-project && cd my-atf-project
 atf-eval init
 atf-eval run --dataset golden_dataset.jsonl --adapter adapter:MyAgentAdapter --no-routing-judge
