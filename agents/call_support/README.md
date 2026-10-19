@@ -4,7 +4,7 @@
 cd agents/call_support
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
-pip install "atf-eval[server,client] @ git+https://github.com/2597688js/atf-eval.git"
+pip install "atf-eval[server,client] @ git+https://github.com/2597688js/atf-eval.git@atf_with_api"
 cp .env.example .env    # set ANTHROPIC_API_KEY
 ```
 
