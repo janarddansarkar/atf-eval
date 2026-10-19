@@ -2,9 +2,9 @@
 
 ```bash
 cd agents/call_support
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
-pip install --upgrade --force-reinstall "atf-eval[server,client] @ git+https://github.com/janarddansarkar/atf-eval.git@atf_with_api"
+python3 -m venv .venv && source .venv/bin/activate
+pip3 install -e .
+pip3 install --upgrade --force-reinstall "atf-eval[server,client] @ git+https://github.com/janarddansarkar/atf-eval.git@atf_with_api"
 cp .env.example .env    # set ANTHROPIC_API_KEY
 ```
 
