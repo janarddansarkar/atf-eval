@@ -3,3 +3,7 @@ traces/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+
+results/
+atf_server_data/
+.llm_cache/

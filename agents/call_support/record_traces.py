@@ -1,6 +1,6 @@
 """Drive the traced call-support agent through scripted customer conversations.
 
-    python -m agents.call_support.record_traces
+    python record_traces.py
 
 The agent saves its own traces as it runs (tracing.py); this script only plays
 the customer. Each scenario names the golden it is meant to follow
@@ -14,7 +14,7 @@ import argparse
 import time
 from pathlib import Path
 
-from agents.call_support.adapter import CallSupportAdapter
+from adapter import CallSupportAdapter
 from atf_eval.normalized import NormalizedTurn
 
 HERE = Path(__file__).parent
@@ -59,7 +59,7 @@ def record(name, golden, deviation, description, messages, trace_dir) -> Path:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--out", default=str(HERE / "traces"), help="trace directory (default: agents/call_support/traces)")
+    p.add_argument("--out", default=str(HERE / "traces"), help="trace directory (default: ./traces)")
     args = p.parse_args()
     for sc in SCENARIOS:
         t0 = time.time()

@@ -1,4 +1,4 @@
-"""Plugs the standalone call-support agent (../../call_support_agent) into atf_eval.
+"""Plugs the standalone call-support agent (src/call_support/) into atf_eval.
 
 The agent knows nothing about atf_eval; this adapter is the only bridge. It calls
 `CallSupportAgent.chat()` and converts the returned `TurnResult` into a

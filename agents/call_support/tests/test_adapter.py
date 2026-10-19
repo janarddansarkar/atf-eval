@@ -1,5 +1,5 @@
 """The ATF side of the call-support agent: the adapter that bridges the standalone agent
-(call_support_agent/) into atf_eval, and its golden dataset. Offline: keyword rules, no LLM."""
+(this project) into atf_eval, and its golden dataset. Offline: keyword rules, no LLM."""
 from __future__ import annotations
 
 import sys
@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("call_support")
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agents.call_support.adapter import CallSupportAdapter  # noqa: E402
+from adapter import CallSupportAdapter  # noqa: E402
 from atf_eval.aggregate import DEFAULT_WEIGHTS  # noqa: E402
 from atf_eval.dashboard.generate import load_fixture_turns  # noqa: E402
 from atf_eval.dataset import group_by_conversation, load_dataset  # noqa: E402
@@ -35,7 +35,7 @@ def test_adapter_normalizes_nodes_state_tools_routing_and_outcome():
 
 def test_golden_dataset_scores_perfectly_offline():
     results = run_evaluation(
-        group_by_conversation(load_dataset(str(ROOT / "agents/call_support/golden_dataset.jsonl"))),
+        group_by_conversation(load_dataset(str(ROOT / "golden_dataset.jsonl"))),
         _adapter(save_traces=False),
         weights=dict(DEFAULT_WEIGHTS),
     )

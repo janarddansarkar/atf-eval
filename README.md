@@ -52,8 +52,7 @@ Optional extras: `[server]` (FastAPI + uvicorn, for `atf-eval serve`), `[client]
 |---|---|
 | `src/atf_eval/` | the framework: metrics (`metrics/`), LLM metrics (`llm_evals/`), judge providers (`llm_provider.py`), CLI, dashboard generator, API server (`api/`) and client (`client.py`) |
 | `agent-eval/` | the frozen spec (`METRICS.md`), golden scenarios and observed-scenario fixtures for the motor-insurance example |
-| `call_support_agent/` | a **standalone** LangGraph + LangChain call-support agent with built-in tracing; no `atf_eval` dependency |
-| `agents/call_support/` | how that agent is evaluated: adapter, goldens, scripted scenarios, recorded traces |
+| `agents/call_support/` | a **self-contained project**: a LangGraph + LangChain call-support agent plus its adapter, goldens and traces; install atf-eval and run it from that folder |
 | `docs/API.md` | the HTTP API reference |
 | `tests/` | unit tests (`pytest`); `tests/fixtures/` has a dependency-free mock agent + tiny golden dataset used as a framework smoke test |
 
