@@ -1,0 +1,28 @@
+[project]
+name = "atf-eval"
+version = "0.1.0"
+description = "Standalone evaluation framework for Agent Trajectory Fidelity (ATF): node traversal, state transition, tool invocation, routing, and outcome similarity scoring against a golden dataset"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.6",
+    "anthropic>=0.40.0",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.29"]  # atf-eval serve
+client = ["httpx>=0.27"]  # atf-eval submit
+nvidia = ["openai>=1.0"]  # NVIDIA NIM's OpenAI-compatible API
+dev = ["pytest>=8.0", "jsonschema>=4.0", "openai>=1.0", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+
+[project.scripts]
+atf-eval = "atf_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atf_eval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

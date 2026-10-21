@@ -1,0 +1,33 @@
+# secrets
+.env
+*.pypirc
+
+# agent-eval-main / agent-eval are separate, standalone repos -- live here as
+# local sibling folders for spec reference, never tracked in atf-eval itself
+agent-eval-main/
+agent-eval/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# build artifacts
+dist/
+build/
+
+# virtualenvs
+.venv/
+venv/
+
+# generated run output
+results/
+*.log
+
+# OS
+.DS_Store
+.llm_cache/
+
+# atf-eval API server data
+atf_server_data/

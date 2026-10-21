@@ -1,0 +1,537 @@
+<title>ATF Trajectory Metrics</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --page: #eef1f6;
+    --surface: #ffffff;
+    --surface-sunken: #eef1f6;
+    --text: #1b2430;
+    --text-muted: #5b6472;
+    --text-faint: #8892a0;
+    --border: #dde2e9;
+    --border-strong: #c4cbd6;
+    --accent: #3454d1;
+    --accent-soft: #eaeefc;
+    --accent-strong: #24399a;
+    --shadow: 0 1px 2px rgba(27, 36, 48, 0.05), 0 10px 28px rgba(27, 36, 48, 0.07);
+
+    /* status palette -- fixed, never themed (dataviz skill) */
+    --good: #0ca30c;
+    --good-soft: #e3f6e3;
+    --warning: #a5720a;
+    --warning-soft: #fdf1d9;
+    --serious: #c15a34;
+    --serious-soft: #fbe9e0;
+    --critical: #d03b3b;
+    --critical-soft: #fbe4e4;
+    --na: #8892a0;
+    --na-soft: #eef1f6;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10141b;
+      --page: #0b0e13;
+      --surface: #171d27;
+      --surface-sunken: #1c2330;
+      --text: #e8ebf0;
+      --text-muted: #9aa4b2;
+      --text-faint: #6c7684;
+      --border: #2a323e;
+      --border-strong: #3a4351;
+      --accent: #8399f2;
+      --accent-soft: #202a45;
+      --accent-strong: #b3c1f7;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.4);
+      --good: #17c964;
+      --good-soft: #123321;
+      --warning: #fab219;
+      --warning-soft: #332a10;
+      --serious: #ec835a;
+      --serious-soft: #33201a;
+      --critical: #e2766a;
+      --critical-soft: #331b1a;
+      --na: #6c7684;
+      --na-soft: #1c2330;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10141b;
+    --page: #0b0e13;
+    --surface: #171d27;
+    --surface-sunken: #1c2330;
+    --text: #e8ebf0;
+    --text-muted: #9aa4b2;
+    --text-faint: #6c7684;
+    --border: #2a323e;
+    --border-strong: #3a4351;
+    --accent: #8399f2;
+    --accent-soft: #202a45;
+    --accent-strong: #b3c1f7;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.4);
+    --good: #17c964;
+    --good-soft: #123321;
+    --warning: #fab219;
+    --warning-soft: #332a10;
+    --serious: #ec835a;
+    --serious-soft: #33201a;
+    --critical: #e2766a;
+    --critical-soft: #331b1a;
+    --na: #6c7684;
+    --na-soft: #1c2330;
+  }
+
+  * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); }
+  ::selection { background: var(--accent-soft); color: var(--accent-strong); }
+
+  .page { max-width: 980px; margin: 0 auto; padding: 3.5rem 1.5rem 5rem; }
+
+  h1, h2, h3 { font-family: "Source Serif 4", Georgia, serif; text-wrap: balance; margin: 0; color: var(--text); }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 0.8rem;
+  }
+
+  header.masthead { border-bottom: 1px solid var(--border); padding-bottom: 1.75rem; margin-bottom: 2.75rem; }
+  header.masthead h1 { font-size: clamp(1.9rem, 4.2vw, 2.5rem); font-weight: 600; letter-spacing: -0.01em; }
+  header.masthead .subtitle { margin-top: 0.75rem; max-width: 62ch; color: var(--text-muted); font-size: 1.02rem; }
+
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 1.6rem; margin-top: 1.5rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.78rem; color: var(--text-faint);
+  }
+  .meta-row dt { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.65rem; margin-bottom: 0.2rem; }
+  .meta-row dd { margin: 0; color: var(--text-muted); word-break: break-word; }
+
+  .align-strip {
+    margin-top: 1.4rem; font-size: 0.82rem; color: var(--text-muted);
+    background: var(--accent-soft); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.65rem 0.95rem; display: flex; gap: 0.6rem; align-items: baseline;
+  }
+  .align-strip strong { color: var(--accent-strong); font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; letter-spacing: 0.03em; }
+  .align-strip code {
+    font-family: "IBM Plex Mono", monospace; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.05rem 0.35rem;
+  }
+
+  section { margin-bottom: 3rem; }
+  .section-head { display: flex; align-items: baseline; gap: 0.75rem; border-left: 3px solid var(--accent); padding-left: 0.85rem; margin-bottom: 1.4rem; }
+  .section-head h2 { font-size: 1.35rem; font-weight: 600; }
+  .section-head .count { font-family: "IBM Plex Mono", monospace; font-size: 0.76rem; color: var(--text-faint); }
+  .section-intro { color: var(--text-muted); font-size: 0.92rem; max-width: 68ch; margin: -0.6rem 0 1.5rem; }
+
+  /* ---------- glossary ---------- */
+  .glossary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; }
+  .glossary-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.1rem 1.2rem 1.25rem; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 0.55rem;
+  }
+  .glossary-badge {
+    width: 2.4rem; height: 2.4rem; border-radius: 8px; background: var(--accent-soft); color: var(--accent-strong);
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 0.85rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .glossary-card h3 { font-size: 1rem; font-weight: 600; font-family: "IBM Plex Sans", sans-serif; }
+  .glossary-card .plain { font-size: 0.89rem; color: var(--text); }
+  .glossary-card .weight-tag {
+    align-self: flex-start; font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; letter-spacing: 0.03em;
+    color: var(--text-faint); background: var(--surface-sunken); border: 1px solid var(--border);
+    border-radius: 999px; padding: 0.15rem 0.55rem;
+  }
+  .glossary-card details { margin-top: 0.15rem; }
+  .glossary-card summary {
+    cursor: pointer; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--accent);
+    list-style: none;
+  }
+  .glossary-card summary::-webkit-details-marker { display: none; }
+  .glossary-card summary::before { content: "formula \25b8  "; }
+  .glossary-card details[open] summary::before { content: "formula \25be  "; }
+  .glossary-card pre {
+    margin: 0.5rem 0 0; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--text-muted);
+    white-space: pre-wrap; background: var(--surface-sunken); border-radius: 6px; padding: 0.55rem 0.65rem;
+  }
+
+  /* ---------- comparison table ---------- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-faint); font-weight: 500; padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  thead th.num, tbody td.num { text-align: right; }
+  tbody td { padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--border); font-size: 0.88rem; vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.baseline { background: var(--surface-sunken); }
+  td.scenario-cell .name { font-weight: 600; display: block; }
+  td.scenario-cell .dev { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--text-faint); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 0.35rem; font-family: "IBM Plex Mono", monospace;
+    font-weight: 600; font-size: 0.82rem; padding: 0.2rem 0.55rem; border-radius: 999px;
+  }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.warning { background: var(--warning-soft); color: var(--warning); }
+  .pill.serious { background: var(--serious-soft); color: var(--serious); }
+  .pill.critical { background: var(--critical-soft); color: var(--critical); }
+  .pill.na { background: var(--na-soft); color: var(--na); font-weight: 500; }
+
+  /* ---------- band legend ---------- */
+  .band-legend {
+    display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 0.9rem; font-size: 0.78rem; color: var(--text-muted);
+  }
+  .band-legend .swatch { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .band-legend i { width: 0.6rem; height: 0.6rem; border-radius: 999px; display: inline-block; }
+
+  /* ---------- interactive tabs (radio-driven, no JS) ---------- */
+  .tabs { position: relative; }
+  .tab-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; padding: 0; margin: -1px; }
+  .tab-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .tab-label {
+    cursor: pointer; font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; padding: 0.5rem 0.9rem;
+    border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-muted); background: var(--surface);
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    outline-offset: 2px;
+  }
+  .tab-label:hover { border-color: var(--accent); color: var(--text); }
+  .panel { display: none; animation: fade-in 180ms ease; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- panel content ---------- */
+  .panel-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem 1.6rem; box-shadow: var(--shadow); }
+
+  .panel-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1.1rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--border); }
+  .panel-header h3 { font-size: 1.2rem; font-weight: 600; }
+  .panel-header .desc { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.35rem; max-width: 52ch; }
+  .panel-header .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.55rem; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; padding: 0.18rem 0.55rem; border-radius: 999px;
+    border: 1px solid var(--border-strong); color: var(--text-muted); white-space: nowrap;
+  }
+  .chip.primary { border-color: var(--accent); color: var(--accent); }
+
+  .atf-headline { text-align: right; flex-shrink: 0; }
+  .atf-headline .label { font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+  .atf-headline .value { font-family: "IBM Plex Mono", monospace; font-size: 2.1rem; font-weight: 600; line-height: 1.1; }
+  .atf-headline .coverage { font-size: 0.76rem; color: var(--text-faint); margin-top: 0.15rem; }
+
+  .group-meter { border-bottom: 1px solid var(--border); }
+  .group-meter:last-of-type { border-bottom: none; }
+  .group-meter > summary {
+    list-style: none; cursor: pointer; padding: 0.85rem 0.1rem; display: grid;
+    grid-template-columns: 3.2rem 1fr 4.5rem; gap: 0.9rem; align-items: center;
+  }
+  .group-meter > summary::-webkit-details-marker { display: none; }
+  .group-meter .g-label { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 0.85rem; }
+  .group-meter .g-label .weight { display: block; font-weight: 400; font-size: 0.65rem; color: var(--text-faint); }
+  .meter-track { height: 8px; border-radius: 4px; background: var(--surface-sunken); overflow: hidden; }
+  .meter-fill { height: 100%; border-radius: 4px; }
+  .meter-fill.good { background: var(--good); }
+  .meter-fill.warning { background: var(--warning); }
+  .meter-fill.serious { background: var(--serious); }
+  .meter-fill.critical { background: var(--critical); }
+  .meter-fill.na { background: var(--na); opacity: 0.35; }
+  .group-meter .g-score { text-align: right; font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; font-weight: 600; }
+
+  .component-list { padding: 0 0.1rem 1.1rem 3.2rem; display: flex; flex-direction: column; gap: 0.6rem; }
+  .component-row { display: grid; grid-template-columns: 1fr 9rem 3.5rem; gap: 0.8rem; align-items: center; }
+  .component-row .c-label { font-size: 0.8rem; color: var(--text-muted); }
+  .component-row .c-label .diag { font-size: 0.62rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-left: 0.3rem; }
+  .evidence { margin: 0.2rem 0 0.9rem; padding: 0.55rem 0.8rem; border-left: 2px solid var(--border); font-size: 0.78rem; color: var(--text-muted); }
+  .evidence .evidence-label { display: block; font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 0.25rem; }
+  .evidence ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .evidence code { font-size: 0.74rem; overflow-wrap: anywhere; }
+  .component-row .c-track { height: 5px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; }
+  .component-row .c-fill { height: 100%; border-radius: 3px; }
+  .component-row .c-fill.na { opacity: 0.35; }
+  .component-row .c-score { text-align: right; font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; }
+
+  .panel-note {
+    margin-top: 1.1rem; font-size: 0.85rem; color: var(--text);
+    background: var(--warning-soft); border: 1px solid var(--border); border-left: 3px solid var(--warning);
+    border-radius: 0 8px 8px 0; padding: 0.75rem 1rem;
+  }
+  .panel-note strong { color: var(--warning); }
+
+  /* ---------- embedded LLM / multimodal section (Groups 1-5), inside each panel ---------- */
+  .llm-section { margin-top: 1.6rem; padding-top: 1.4rem; border-top: 1px solid var(--border); }
+  .llm-section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.9rem; }
+  .llm-section-head h4 { font-size: 0.95rem; font-weight: 600; font-family: "IBM Plex Sans", sans-serif; }
+  .llm-section-head .count { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--text-faint); margin-left: 0.5rem; font-weight: 400; }
+  .llm-coverage { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--text-faint); }
+
+  .llm-group { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 0.6rem; background: var(--surface-sunken); }
+  .llm-group:last-child { margin-bottom: 0; }
+  .llm-group > summary {
+    list-style: none; cursor: pointer; padding: 0.65rem 0.9rem; display: flex;
+    justify-content: space-between; align-items: center; gap: 0.6rem;
+  }
+  .llm-group > summary::-webkit-details-marker { display: none; }
+  .lg-label { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 0.8rem; }
+  .lg-count { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--text-faint); white-space: nowrap; }
+  .llm-group-note { margin: 0 0.9rem 0.8rem; font-size: 0.8rem; color: var(--text-muted); }
+
+  .llm-metric { border-top: 1px solid var(--border); }
+  .llm-metric > summary {
+    list-style: none; cursor: pointer; padding: 0.55rem 0.9rem; display: flex; align-items: center; gap: 0.6rem;
+  }
+  .llm-metric > summary::-webkit-details-marker { display: none; }
+  .lm-name { flex: 1; font-size: 0.85rem; font-weight: 500; }
+  .lm-level { color: var(--text-faint); font-size: 0.65rem; margin-left: 0.45rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lm-status { font-size: 0.68rem; color: var(--na); text-transform: uppercase; letter-spacing: 0.03em; }
+  .lm-reason { margin: 0.1rem 0.9rem 0.7rem; font-size: 0.82rem; color: var(--text-muted); }
+  .lm-turns { margin: 0 0.9rem 0.8rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .lm-turn { display: grid; grid-template-columns: 4rem 4rem 1fr; gap: 0.5rem; align-items: start; font-size: 0.78rem; }
+  .lm-turn-id { color: var(--text-faint); font-family: "IBM Plex Mono", monospace; }
+  .lm-turn-score { font-family: "IBM Plex Mono", monospace; }
+  .lm-turn-score.good { color: var(--good); } .lm-turn-score.warning { color: var(--warning); }
+  .lm-turn-score.serious { color: var(--serious); } .lm-turn-score.critical { color: var(--critical); } .lm-turn-score.na { color: var(--na); }
+  .lm-turn-reason { color: var(--text-muted); }
+
+  /* ---------- notes / footer ---------- */
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--warning); background: var(--warning-soft);
+    border-radius: 0 8px 8px 0; padding: 1.1rem 1.35rem; font-size: 0.92rem;
+  }
+  .callout h3 { font-family: "IBM Plex Sans", sans-serif; font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text); }
+  .callout p { margin: 0 0 0.6rem; color: var(--text); }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout code, .panel-header code, .panel-note code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.85em; background: var(--surface);
+    padding: 0.1rem 0.35rem; border-radius: 4px; border: 1px solid var(--border);
+  }
+
+  footer {
+    border-top: 1px solid var(--border); padding-top: 1.4rem; font-size: 0.8rem; color: var(--text-faint);
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.6rem;
+  }
+  footer .weights { font-family: "IBM Plex Mono", monospace; }
+
+  /* ---------- dynamic tab wiring (generated per-run, N tabs) ---------- */
+  {{TAB_ACTIVE_CSS}}
+  {{PANEL_ACTIVE_CSS}}
+  {{TAB_FOCUS_CSS}}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">ATF Trajectory Evaluation &middot; Interactive</p>
+    <h1>ATF Trajectory Metrics</h1>
+    <p class="subtitle">
+      Agent Trajectory Fidelity dashboard: golden trajectories vs. observed agent runs.
+      Covers both the deterministic trajectory metrics (NTS/STS/TIS/OS/ATF) and the
+      LLM/multimodal metrics (Groups 1-5) in one page. Click a scenario below to drill
+      into every score.
+    </p>
+    <dl class="meta-row">
+      <div><dt>Golden dataset</dt><dd>{{GOLDEN_PATH}}</dd></div>
+      <div><dt>Observed runs</dt><dd>{{SCENARIOS_PATH}}</dd></div>
+      <div><dt>Run date</dt><dd>{{RUN_DATE}}</dd></div>
+{{SETTINGS_ROWS}}    </dl>
+    <p class="align-strip">
+      <strong>Spec-aligned</strong>
+      Every component formula and weight below implements <code>agent-eval/METRICS.md</code> (the frozen spec)
+      &sect;2&ndash;&sect;6: NTS 40/30/30, STS 70/30, TIS 25/20/25/20/10, OS 50/30/20.
+      ATF is a weighted geometric mean of NTS/STS/TIS/OS. Weights used for this run:
+      {{ATF_WEIGHTS}} (defaults: {{DEFAULT_ATF_WEIGHTS}}; RS has been removed and its former 10%
+      redistributed proportionally).
+      Evidence a trace does not record is N/A; evidence it records but the agent got wrong is a loss.
+      The LLM/multimodal metrics (&sect;13&ndash;&sect;24) call <code>atf_eval.llm_evals</code>'s
+      real evaluator code, never a re-derived rubric.
+    </p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>What each metric means</h2>
+      <span class="count">plain-English, then the formula</span>
+    </div>
+    <p class="section-intro">
+      ATF blends four independent metrics into one fidelity score. Each one answers a
+      different question about the agent's run &mdash; a metric whose evidence the trace does not
+      record reports <strong>N/A</strong>, never a zero (METRICS.md Frozen Rule&nbsp;11).
+    </p>
+    <div class="glossary-grid">
+
+      <div class="glossary-card">
+        <span class="glossary-badge">NTS</span>
+        <h3>Node Traversal Similarity</h3>
+        <p class="plain">Did the agent take the right steps, in the right order, without skipping any or adding extra ones?</p>
+        <span class="weight-tag">{{W_NTS}} of ATF</span>
+        <details><summary>formula</summary><pre>NTS = .40&times;Coverage + .30&times;Precision + .30&times;Order
+Matched nodes: exact, position-aware
+  sequential (LCS) alignment
+Order: LCS / max(|expected|, |observed|)</pre></details>
+      </div>
+
+      <div class="glossary-card">
+        <span class="glossary-badge">STS</span>
+        <h3>State Transition Similarity</h3>
+        <p class="plain">Did the right facts about the conversation change at the right time &mdash; e.g. "customer_verified: false &rarr; true"?</p>
+        <span class="weight-tag">{{W_STS}} of ATF</span>
+        <details><summary>formula</summary><pre>STS = .70&times;Transition Accuracy + .30&times;Order
+Accuracy: key+old+new all match, compared
+  within LCS-aligned nodes (node-level state)
+Order: LCS over full (key, old, new)</pre></details>
+      </div>
+
+      <div class="glossary-card">
+        <span class="glossary-badge">TIS</span>
+        <h3>Tool Invocation Similarity</h3>
+        <p class="plain">Did the agent call the right backend tools, with the right inputs, in the right order?</p>
+        <span class="weight-tag">{{W_TIS}} of ATF</span>
+        <details><summary>formula</summary><pre>TIS = .25&times;Coverage + .20&times;Precision
+    + .25&times;Identity + .20&times;Input + .10&times;Order
+Aligned within LCS-aligned nodes when the
+  trace supports node association (else per
+  turn); Identity = correct / aligned pairs;
+  Input over matched (same-tool) pairs</pre></details>
+      </div>
+
+      <div class="glossary-card">
+        <span class="glossary-badge">OS</span>
+        <h3>Outcome Similarity</h3>
+        <p class="plain">Did the conversation land on the correct final result, with the correct details (amount, frequency, duration)?</p>
+        <span class="weight-tag">{{W_OS}} of ATF</span>
+        <details><summary>formula</summary><pre>OS = .50&times;Identity + .30&times;Attributes + .20&times;Completion
+Completion: required outcome attributes
+  achieved / required (N/A if none declared)</pre></details>
+      </div>
+
+      <div class="glossary-card">
+        <span class="glossary-badge">ATF</span>
+        <h3>Agent Trajectory Fidelity</h3>
+        <p class="plain">The single composite score: a weighted geometric mean of the four above. Any metric with no evidence is excluded and the rest re-weighted &mdash; never coerced to zero. A component scoring 0 is floored at &epsilon; = 1e-6, so it pulls ATF sharply toward 0.</p>
+        <span class="weight-tag">the headline number</span>
+        <details><summary>formula</summary><pre>ATF = exp( &Sigma;&#7522; w&#7522;&middot;log(max(S&#7522;, &epsilon;)) / &Sigma;&#7522; w&#7522; )
+S &isin; {NTS, STS, TIS, OS}
+w = this run's weights (listed above);
+    sums over whichever groups apply</pre></details>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>LLM &amp; multimodal evaluation</h2>
+      <span class="count">METRICS.md Part B &middot; Groups 1-5</span>
+    </div>
+    <p class="section-intro">
+      A second, independent set of 32 metrics scored by an LLM judge instead of a formula:
+      response quality, grounding, safety/policy, conversation quality, and voice/multimodal.
+      Each keeps its <strong>native</strong> scoring (1&ndash;5, Pass/Fail, -2..+2, count+severity,
+      category+confidence &mdash; METRICS.md &sect;19: no cross-metric normalization), so there is
+      no blended score here the way NTS/STS/TIS/OS blend into ATF. Full results for every run
+      are in the <strong>LLM &amp; Multimodal Evaluation</strong> section of that run's panel below,
+      grouped exactly as METRICS.md groups them.
+    </p>
+    <div class="glossary-grid">
+      <div class="glossary-card">
+        <span class="glossary-badge">G1</span><h3>Response Quality</h3>
+        <p class="plain">Relevance, Correctness, Completeness, Helpfulness, Question Quality.</p>
+      </div>
+      <div class="glossary-card">
+        <span class="glossary-badge">G2</span><h3>Grounding &amp; Knowledge</h3>
+        <p class="plain">Faithfulness, Groundedness, Hallucination, Citation/Evidence Accuracy.</p>
+      </div>
+      <div class="glossary-card">
+        <span class="glossary-badge">G3</span><h3>Safety, Policy &amp; Compliance</h3>
+        <p class="plain">Policy Compliance, AI Safety, Refusal/Escalation Quality.</p>
+      </div>
+      <div class="glossary-card">
+        <span class="glossary-badge">G4</span><h3>Conversation Quality</h3>
+        <p class="plain">Coherence, Empathy, Intent Understanding, Repetition, Effort, Friction, Sentiment.</p>
+      </div>
+      <div class="glossary-card">
+        <span class="glossary-badge">G5</span><h3>Voice / Multimodal</h3>
+        <p class="plain">13 metrics needing audio/timing evidence (interruptions, prosody, latency, disconnection, &hellip;). N/A on a text-only trace &mdash; never a false score.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>At a glance</h2>
+      <span class="count">every run &middot; group scores</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th class="num">NTS</th><th class="num">STS</th><th class="num">TIS</th>
+            <th class="num">OS</th><th class="num">ATF</th>
+            <th class="num">LLM scored</th>
+          </tr>
+        </thead>
+        <tbody>{{GLANCE_ROWS}}
+        </tbody>
+      </table>
+    </div>
+    <div class="band-legend">
+      <span class="swatch"><i style="background:var(--good)"></i>&ge; 0.95 good</span>
+      <span class="swatch"><i style="background:var(--warning)"></i>0.80&ndash;0.949 needs a look</span>
+      <span class="swatch"><i style="background:var(--serious)"></i>0.50&ndash;0.799 significant gap</span>
+      <span class="swatch"><i style="background:var(--critical)"></i>&lt; 0.50 failed</span>
+      <span class="swatch"><i style="background:var(--na)"></i>N/A &mdash; not evaluable, not a failure</span>
+    </div>
+    <p class="section-intro" style="margin-top:0.9rem;">
+      Bands above are a reading aid for this dashboard only &mdash; METRICS.md itself defines no
+      pass/fail threshold, only scores and N/A (Frozen Rule&nbsp;11). &#9888; marks a score explained
+      in the notes at the bottom of this page.
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Component-level drill-down</h2>
+      <span class="count">click a scenario, then a metric row, to expand</span>
+    </div>
+
+    <div class="tabs">{{TAB_INPUTS}}
+
+      <div class="tab-bar">{{TAB_LABELS}}
+      </div>
+      {{PANELS}}
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Notes for the reader</h2>
+    </div>
+    <div class="callout">
+      <h3>&#9888; Auto-detected scoring caveats</h3>
+      {{NOTES}}
+      <p>
+        <strong>Recommendation:</strong> read each component, and its Evidence list, as the signal
+        for a deviation. When a run's metric coverage is below 100%, its ATF rests on fewer
+        components than a fully evidenced run's, so compare it with care.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Component formulas implement agent-eval/METRICS.md &sect;2&ndash;&sect;6 (deterministic; ATF is a weighted geometric mean, see above) and &sect;13&ndash;&sect;24 (LLM/multimodal, frozen spec). LLM rationale supports auditability but is not itself authoritative (&sect;23). LLM rationale supports auditability but is not itself authoritative (&sect;23).</span>
+    <span class="weights">ATF weights used: {{ATF_WEIGHTS}}</span>
+  </footer>
+
+</div>
